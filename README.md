@@ -1,66 +1,120 @@
-## Foundry
+# Vertix Smart Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## Overview
+Vertix is a decentralized marketplace where people can trade digital assets. This includes creator-branded NFTs, in-game items, digital accounts, websites, domains, apps, etc. It uses a combination of Polygon and Base technology to ensure secure, clear, and trustworthy transactions. The smart contracts allow for various NFT functions, such as borrowing, staking, and selling. They also provide secure ways to handle manual transfers and ensure that assets are authentic.
 
-Foundry consists of:
+## Features
+- **NFT Trading**: Mint, trade, borrow, stake, and sell creator-branded NFTs and in-game items.
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+- **Escrow System**: Secure escrow-like smart contracts for safe manual transfers of digital assets.
 
-## Documentation
+- **Verification**: Ensures authenticity of digital assets, including accounts, domains, apps, etc.
 
-https://book.getfoundry.sh/
+- **Hybrid Architecture**: Leverages Polygon for low-cost, high-speed transactions and Base for scalability.
+
+- **Decentralized Marketplace**: Trustless trading for gamers, creators, and digital entrepreneurs.
+
+## Prerequisites
+- **Foundry**: Ensure you have ([Foundry](https://github.com/foundry-rs/foundry)) installed.
+
+- **Node.js**: Required for dependency management.
+
+- **Polygon & Base Nodes**: Access to Polygon and Base RPC endpoints for deployment and testing.
+
+## Contributing
+Contributions are made to our repos via Issues and Pull Requests (PRs). First search existing Issues and PRs before creating your own.
+
+### Fork and Pull Workflow
+
+In general, we follow the ["fork-and-pull" Git workflow](https://github.com/susam/gitpr)
+
+1. Fork the repository to your own Github account
+2. Clone the project to your machine
+3. Create a branch locally with a succinct but descriptive name
+4. Commit changes to the branch following the [standard convention commit spec](https://www.conventionalcommits.org/en/v1.0.0/#:~:text=fix%3A%20a%20commit%20of%20the,CHANGE%3A%20%2C%20or%20appends%20a%20!)
+5. Following any formatting and testing guidelines specific to this repo
+6. Push changes to your fork
+7. Open a PR in our repository
+
+## Installation
+
+- Clone the repository:
+```
+git clone https://github.com/vertix-marketplace/vertix-smart-contracts.git
+cd vertix-smart-contracts
+```
+
+- Install dependencies:
+```
+make install
+```
+
+- Set up environment variables:
+Create a .env file in the root directory and add:
+
+```
+POLYGON_RPC_URL=<your-polygon-rpc-url>
+BASE_RPC_URL=<your-base-rpc-url>
+PRIVATE_KEY=<your-wallet-private-key>
+```
 
 ## Usage
+Compile Contracts
 
-### Build
-
-```shell
-$ forge build
+```
+forge build
 ```
 
-### Test
-
-```shell
-$ forge test
+## Run Tests
+```
+forge test
 ```
 
-### Format
+## Deploy Contracts
+Deploy to Polygon or Base:
 
-```shell
-$ forge fmt
 ```
 
-### Gas Snapshots
+```
+or
 
-```shell
-$ forge snapshot
 ```
 
-### Anvil
-
-```shell
-$ anvil
 ```
 
-### Deploy
+## Interact with Contracts
+Use Foundry’s cast to interact with deployed contracts. Ensure you have anvil running:
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+```
+cast call <contract-address> "<function-signature>" --rpc-url $POLYGON_RPC_URL
 ```
 
-### Cast
+## Contract Structure
+- **NFTMarketplace.sol**: Core marketplace for minting, trading, borrowing, and staking NFTs.
 
-```shell
-$ cast <subcommand>
+- **Escrow.sol**: Manages secure escrow for manual asset transfers.
+
+- **Verification.sol**: Handles asset authenticity verification.
+
+- **AssetRegistry.sol**: Tracks registered digital assets (NFTs, accounts, domains, apps).
+
+- **PaymentSplitter.sol**: Distributes fees and royalties to creators, platform, and other stakeholders.
+
+
+## Testing
+Run test per function:
+
+```
+forge test --mt <function name>
 ```
 
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+Run test per contract:
 ```
+forge test --mc <contract name>
+```
+
+## License
+This project is licensed under the MIT License. See the LICENSE (./LICENSE) file for details.
+
+## Contact
+For inquiries, reach out via Vertix Discord or Vertix Twitter.
