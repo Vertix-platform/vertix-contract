@@ -1,130 +1,3 @@
-# Vertix Smart Contracts
-
-## Overview
-Vertix is a decentralized marketplace where people can trade digital assets. This includes creator-branded NFTs, in-game items, digital accounts, websites, domains, apps, etc. It uses a combination of Polygon and Base technology to ensure secure, clear, and trustworthy transactions. The smart contracts allow for various NFT functions, such as borrowing, staking, and selling. They also provide secure ways to handle manual transfers and ensure that assets are authentic.
-
-## Features
-- **NFT Trading**: Mint, trade, borrow, stake, and sell creator-branded NFTs and in-game items.
-
-- **Escrow System**: Secure escrow-like smart contracts for safe manual transfers of digital assets.
-
-- **Verification**: Ensures authenticity of digital assets, including accounts, domains, apps, etc.
-
-- **Hybrid Architecture**: Leverages Polygon for low-cost, high-speed transactions and Base for scalability.
-
-- **Decentralized Marketplace**: Trustless trading for gamers, creators, and digital entrepreneurs.
-
-## Prerequisites
-- **Foundry**: Ensure you have ([Foundry](https://github.com/foundry-rs/foundry)) installed.
-
-- **Node.js**: Required for dependency management.
-
-- **Polygon & Base Nodes**: Access to Polygon and Base RPC endpoints for deployment and testing.
-
-## Contributing
-Contributions are made to our repos via Issues and Pull Requests (PRs). First search existing Issues and PRs before creating your own.
-
-### Fork and Pull Workflow
-
-In general, we follow the ["fork-and-pull" Git workflow](https://github.com/susam/gitpr)
-
-1. Fork the repository to your own Github account
-2. Clone the project to your machine
-3. Create a branch locally with a succinct but descriptive name
-4. Commit changes to the branch following the [standard convention commit spec](https://www.conventionalcommits.org/en/v1.0.0/#:~:text=fix%3A%20a%20commit%20of%20the,CHANGE%3A%20%2C%20or%20appends%20a%20!)
-5. Following any formatting and testing guidelines specific to this repo
-6. Push changes to your fork
-7. Open a PR in our repository
-
-## Installation
-
-- Clone the repository:
-```
-git clone https://github.com/vertix-marketplace/vertix-smart-contracts.git
-cd vertix-smart-contracts
-```
-
-- Install dependencies:
-```
-make install
-```
-
-- Set up environment variables:
-Create a .env file in the root directory and add:
-
-```
-POLYGON_RPC_URL=<your-polygon-rpc-url>
-BASE_RPC_URL=<your-base-rpc-url>
-PRIVATE_KEY=<your-wallet-private-key>
-```
-
-## Usage
-Compile Contracts
-
-```
-forge build
-```
-
-## Run Tests
-```
-forge test
-```
-
-## Deploy Contracts
-Deploy to Polygon or Base:
-
-```
-make deployNftMarketplacePolygon
-```
-or
-
-```
-make deployNftMarketplaceBase
-```
-
-## Interact with Contracts
-Use Foundry’s cast to interact with deployed contracts. Ensure you have anvil running:
-
-```
-cast call <contract-address> "<function-signature>" --rpc-url $POLYGON_RPC_URL
-```
-
-## Contract Structure
-- **VertixMarketplace.sol**: Core marketplace for minting, trading, borrowing, and staking NFTs.
-
-- **VertixEscrow.sol**: Manages secure escrow for manual asset transfers.
-
-- **AssetVerifier.sol**: Handles asset authenticity verification.
-
-- **AssetRegistry.sol**: Tracks registered digital assets (NFTs, accounts, domains, apps).
-
-- **PaymentSplitter.sol**: Distributes fees and royalties to creators, platform, and other stakeholders.
-
-
-## Testing
-Run test per function:
-
-```
-forge test --mt <function name>
-```
-
-Run test per contract:
-```
-forge test --mc <contract name>
-```
-
-## License
-This project is licensed under the MIT License. See the LICENSE (./LICENSE) file for details.
-
-## Contact
-For inquiries, reach out via Vertix Discord or Vertix Twitter.
-
-
-
-
-
-
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -142,18 +15,8 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {ChainlinkClient} from "@chainlink/contracts/src/v0.8/operatorforwarder/ChainlinkClient.sol";
 import {Chainlink} from "@chainlink/contracts/src/v0.8/operatorforwarder/Chainlink.sol";
 import {IVertixEscrow} from "./interfaces/IVertixEscrow.sol";
-
-
-// Interfaces
-interface IVertixAssetVerifier {
-    function verifyAsset(address user, string calldata assetType, string calldata assetId) external view returns (bool);
-    function submitVerification(string calldata assetType, string calldata assetId, bytes calldata proof) external;
-}
-
-interface IChainlinkConsumer {
-    function requestAssetValue(string memory assetType, string calldata assetId) external returns (bytes32);
-    function getValue(bytes32 requestId) external view returns (uint256);
-}
+import {IVertixAssetVerifier} from "./interfaces/IVertixAssetVerifier.sol";
+import {IChainlinkConsumer} from "./interfaces/IChainlinkConsumer.sol";
 
 interface IERC721Collection {
     function initialize(string memory name, string memory symbol) external;
@@ -165,10 +28,7 @@ interface IERC1155Collection {
     function safeMint(address to, uint256 tokenId, uint256 amount, string memory tokenURI) external;
 }
 
-
-// Contracts
 contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, ERC721URIStorageUpgradeable {
-
     // Errors
     error VertixMarketplace__NotOwner();
     error VertixMarketplace__InvalidPrice();
@@ -181,6 +41,9 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
     error VertixMarketplace__InvalidCollection();
     error VertixMarketplace__CollectionNotFound();
     error VertixMarketplace__OracleRequestPending();
+    error VertixMarketplace__InvalidPlatform();
+    error VertixMarketplace__InvalidAsset();
+    error VertixMarketplace__NotAssetOwner();
 
     // Type Declarations
     struct Listing {
@@ -193,7 +56,7 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         bool isActive;
     }
 
-    struct AssetNFT {
+    struct SocialMediaNFT {
         string platform;
         string accountId;
         uint256 value;
@@ -216,12 +79,10 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         bool isPending;
     }
 
-    IVertixAssetVerifier public verifierContract;
-
-
     // State Variables
     uint256 private _listingId;
     uint256 private _collectionId;
+    IVertixAssetVerifier public verifierContract;
     IERC20 public paymentToken;
     uint256 public platformFee;
     IVertixEscrow public escrowContract;
@@ -229,8 +90,9 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
     address public erc1155Template;
     address public chainlinkConsumer;
 
+    mapping(string => bool) public validPlatforms; // Valid social media platforms
     mapping(uint256 => Listing) public listings;
-    mapping(address => mapping(string => AssetNFT)) public assetNFTs;
+    mapping(address => mapping(string => SocialMediaNFT)) public socialMediaNFTs;
     mapping(uint256 => Collection) public collections;
     mapping(address => uint256) public collectionAddressToId;
     mapping(bytes32 => OracleRequest) public oracleRequests;
@@ -238,6 +100,7 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
     // Events
     event NFTListed(uint256 indexed listingId, address indexed seller, address tokenAddress, uint256 tokenId, uint256 price, bool isERC721);
     event NFTPurchased(uint256 indexed listingId, address indexed buyer, address tokenAddress, uint256 tokenId, uint256 price);
+    event SocialMediaNFTMinted(address indexed owner, string platform, string accountId, uint256 value);
     event CollectionCreated(
         uint256 indexed collectionId,
         address indexed owner,
@@ -255,17 +118,17 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         uint256 amount,
         string tokenURI
     );
+    event SocialMediaValueRequested(bytes32 indexed requestId, string platform, string accountId, address requester);
+    event SocialMediaValueFulfilled(bytes32 indexed requestId, uint256 value);
     event NonNFTSaleCreated(
         uint256 indexed escrowId,
         address indexed seller,
         address indexed buyer,
         uint256 price,
-        bytes32 assetHash
+        bytes32 assetHash,
+        string assetType,
+        string assetId
     );
-    event AssetValueRequested(bytes32 indexed requestId, string platform, string accountId, address requester);
-    event AssetValueFulfilled(bytes32 indexed requestId, uint256 value);
-    event AssetNFTMinted(address indexed owner, string platform, string accountId, uint256 value);
-
 
     // Modifiers
     modifier onlyListingOwner(uint256 listingId) {
@@ -307,6 +170,12 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         chainlinkConsumer = _chainlinkConsumer;
         _listingId = 0;
         _collectionId = 0;
+
+        // Initialize valid social media platforms
+        validPlatforms["x"] = true;
+        validPlatforms["instagram"] = true;
+        validPlatforms["twitch"] = true;
+        validPlatforms["facebook"] = true;
     }
 
     // External Functions
@@ -320,7 +189,6 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         address collectionAddress = Clones.clone(template);
 
         if (isERC721) {
-            // Call initialize on ERC721Collection interface
             IERC721Collection(collectionAddress).initialize(name, symbol);
             OwnableUpgradeable(collectionAddress).transferOwnership(msg.sender);
         } else {
@@ -371,13 +239,12 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
     ) external nonReentrant {
         if (price == 0) revert VertixMarketplace__InvalidPrice();
 
-        // Verify collection exists (optional: restrict to marketplace-created collections)
+     // Verify collection exists (optional: restrict to marketplace-created collections)
         if (collectionAddressToId[tokenAddress] == 0 && tokenAddress != address(this)) {
              // Allow external collections, but we can add stricter checks
         }
 
         uint256 listingId = _listingId++;
-
         listings[listingId] = Listing({
             seller: msg.sender,
             tokenAddress: tokenAddress,
@@ -401,7 +268,7 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         Listing memory listing = listings[listingId];
         if (!listing.isActive) revert VertixMarketplace__NotListed();
 
-        listing.isActive = false;
+        listings[listingId].isActive = false;
 
         if (listing.isERC721) {
             IERC721(listing.tokenAddress).safeTransferFrom(address(this), msg.sender, listing.tokenId);
@@ -426,33 +293,34 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
             IERC1155(listing.tokenAddress).safeTransferFrom(address(this), msg.sender, listing.tokenId, listing.amount, "");
         }
 
-        listing.isActive = false;
+        listings[listingId].isActive = false;
         emit NFTPurchased(listingId, msg.sender, listing.tokenAddress, listing.tokenId, listing.price);
     }
 
-    function mintAssetNFT(
-        string calldata assetType,
-        string calldata assetId
+    function mintSocialMediaNFT(
+        string calldata platform,
+        string calldata accountId
     ) external nonReentrant {
-        if (!IVertixAssetVerifier(verifierContract).verifyAsset(msg.sender, assetType, assetId)) {
+        if (!validPlatforms[platform]) revert VertixMarketplace__InvalidPlatform();
+        if (bytes(accountId).length == 0) revert VertixMarketplace__InvalidAsset();
+        if (!IVertixAssetVerifier(verifierContract).verifyAsset(msg.sender, "social_media", accountId)) {
             revert VertixMarketplace__Unauthorized();
         }
 
-        bytes32 requestId = IChainlinkConsumer(chainlinkConsumer).requestAssetValue(assetType, assetId);
+        bytes32 requestId = IChainlinkConsumer(chainlinkConsumer).requestAssetValue("social_media", accountId);
         oracleRequests[requestId] = OracleRequest({
-            platform: assetType, // Now assetType
-            accountId: assetId, // Now assetId
+            platform: platform,
+            accountId: accountId,
             requester: msg.sender,
             isPending: true
         });
 
-        emit AssetValueRequested(requestId, assetType, assetId, msg.sender);
+        emit SocialMediaValueRequested(requestId, platform, accountId, msg.sender);
     }
 
-
-    function fulfillAssetValue(
+    function fulfillSocialMediaValue(
         bytes32 requestId,
-        string calldata assetURI,
+        string calldata profilePicURI,
         bool autoList
     ) external {
         OracleRequest memory request = oracleRequests[requestId];
@@ -463,18 +331,18 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
 
         uint256 tokenId = uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp)));
         _mint(request.requester, tokenId);
-        _setTokenURI(tokenId, assetURI);
+        _setTokenURI(tokenId, profilePicURI);
 
-        assetNFTs[request.requester][request.platform] = AssetNFT({
-            platform: request.platform, // Now assetType
-            accountId: request.accountId, // Now assetId
+        socialMediaNFTs[request.requester][request.platform] = SocialMediaNFT({
+            platform: request.platform,
+            accountId: request.accountId,
             value: value,
             owner: request.requester
         });
 
-        request.isPending = false;
-        emit AssetValueFulfilled(requestId, value);
-        emit AssetNFTMinted(request.requester, request.platform, request.accountId, value);
+        oracleRequests[requestId].isPending = false;
+        emit SocialMediaValueFulfilled(requestId, value);
+        emit SocialMediaNFTMinted(request.requester, request.platform, request.accountId, value);
 
         if (autoList && value > 0) {
             uint256 listingId = _listingId++;
@@ -496,25 +364,28 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         address buyer,
         uint256 price,
         bytes32 assetHash,
-        uint256 duration
+        uint256 duration,
+        string calldata assetType,
+        string calldata assetId
     ) external nonReentrant returns (uint256) {
-        if(price > 0){
-            revert VertixMarketplace__InvalidPrice();
+        if (price == 0) revert VertixMarketplace__InvalidPrice();
+        if (buyer == address(0)) revert VertixMarketplace__InvalidBuyer();
+        if (bytes(assetType).length == 0 || bytes(assetId).length == 0) revert VertixMarketplace__InvalidAsset();
+        if (!IVertixAssetVerifier(verifierContract).verifyAsset(msg.sender, assetType, assetId)) {
+            revert VertixMarketplace__NotAssetOwner();
         }
-        if(buyer != address(0)){
-            revert VertixMarketplace__InvalidBuyer();
-        }
+        if (keccak256(abi.encodePacked(assetType, assetId)) != assetHash) revert VertixMarketplace__InvalidAsset();
 
         uint256 escrowId = IVertixEscrow(escrowContract).createEscrow(buyer, price, assetHash, duration);
 
-        emit NonNFTSaleCreated(escrowId, msg.sender, buyer, price, assetHash);
+        emit NonNFTSaleCreated(escrowId, msg.sender, buyer, price, assetHash, assetType, assetId);
         return escrowId;
     }
 
-    // Internals Functions
+    // Internal Functions
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    // View & Pure functions
+    // View & Pure Functions
     function getListing(uint256 listingId) external view returns (Listing memory) {
         return listings[listingId];
     }
@@ -525,5 +396,9 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
 
     function getCollectionIdByAddress(address collectionAddress) external view returns (uint256) {
         return collectionAddressToId[collectionAddress];
+    }
+
+    function isValidPlatform(string calldata platform) external view returns (bool) {
+        return validPlatforms[platform];
     }
 }
