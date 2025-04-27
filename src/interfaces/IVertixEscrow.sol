@@ -7,6 +7,8 @@ interface IVertixEscrow {
         address buyer;
         uint256 price;
         bytes32 assetHash; // Hash of asset details (e.g., social media account, website)
+        string assetType; // e.g., "social_media", "domain", "app", "website"
+        string assetId; // e.g., "123", "example.com", "com.app.id"
         uint256 depositAmount; // Amount deposited by buyer
         uint256 deadline; // Escrow expiration timestamp
         bool isActive;
@@ -22,7 +24,14 @@ interface IVertixEscrow {
     event EscrowResolved(uint256 indexed escrowId, address indexed resolver, bool sellerWins);
     event EscrowCancelled(uint256 indexed escrowId, address indexed seller, address indexed buyer);
 
-    function createEscrow(address buyer, uint256 price, bytes32 assetHash, uint256 duration) external returns (uint256);
+    function createEscrow(
+        address buyer,
+        uint256 price,
+        bytes32 assetHash,
+        uint256 duration,
+        string calldata assetType,
+        string calldata assetId
+    ) external returns (uint256);
     function depositFunds(uint256 escrowId) external;
     function completeEscrow(uint256 escrowId) external;
     function disputeEscrow(uint256 escrowId) external;

@@ -54,7 +54,7 @@ contract ChainlinkConsumer is ChainlinkClient {
             Chainlink.Request memory request = _buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
             string memory url = string(abi.encodePacked(
                 "https://api.vertix.io/value?assetType=", assetType, "&assetId=", assetId
-            ));
+            )); // link is just a placeholder for now
             request._add("get", url);
             request._add("path", "value");
             requestId = _sendChainlinkRequestTo(oracle, request, fee);

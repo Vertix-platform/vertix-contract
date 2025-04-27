@@ -376,7 +376,7 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         }
         if (keccak256(abi.encodePacked(assetType, assetId)) != assetHash) revert VertixMarketplace__InvalidAsset();
 
-        uint256 escrowId = IVertixEscrow(escrowContract).createEscrow(buyer, price, assetHash, duration);
+        uint256 escrowId = IVertixEscrow(escrowContract).createEscrow(buyer, price, assetHash, duration, assetType, assetId);
 
         emit NonNFTSaleCreated(escrowId, msg.sender, buyer, price, assetHash, assetType, assetId);
         return escrowId;

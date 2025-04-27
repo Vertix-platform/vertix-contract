@@ -19,6 +19,8 @@ contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, Ree
     error VertixEscrow__AlreadyDeposited();
     error VertixEscrow__EscrowExpired();
     error VertixEscrow__DisputeNotResolved();
+    error VertixEscrow__InvalidAsset();
+    error VertixEscrow__InsufficientFunds();
 
     // Type Declarations
     struct Escrow {
@@ -26,6 +28,8 @@ contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, Ree
         address buyer;
         uint256 price;
         bytes32 assetHash; // Hash of asset details (e.g., social media account, website)
+        string assetType; // e.g., "social_media", "domain", "app", "website"
+        string assetId; // e.g., "123", "example.com", "com.app.id"
         uint256 depositAmount; // Amount deposited by buyer
         uint256 deadline; // Escrow expiration timestamp
         bool isActive;
@@ -43,7 +47,15 @@ contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, Ree
     mapping(uint256 => address) public disputeResolver; // Escrow ID => Resolver (admin or arbitrator)
 
     // Events
-    event EscrowCreated(uint256 indexed escrowId, address indexed seller, address indexed buyer, uint256 price, bytes32 assetHash);
+    event EscrowCreated(
+        uint256 indexed escrowId,
+        address indexed seller,
+        address indexed buyer,
+        uint256 price,
+        bytes32 assetHash,
+        string assetType,
+        string assetId
+    );
     event EscrowDeposited(uint256 indexed escrowId, address indexed buyer, uint256 amount);
     event EscrowCompleted(uint256 indexed escrowId, address indexed seller, address indexed buyer);
     event EscrowDisputed(uint256 indexed escrowId, address indexed seller, address indexed buyer);
@@ -89,19 +101,24 @@ contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, Ree
         address buyer,
         uint256 price,
         bytes32 assetHash,
-        uint256 duration
+        uint256 duration,
+        string calldata assetType,
+        string calldata assetId
     ) external nonReentrant returns (uint256) {
         if (price == 0) revert VertixEscrow__InvalidPrice();
         if (buyer == address(0)) revert VertixEscrow__Unauthorized();
+        if (bytes(assetType).length == 0 || bytes(assetId).length == 0) revert VertixEscrow__InvalidAsset();
 
         uint256 escrowId = _escrowId++;
-        uint256 deadline = block.timestamp + duration; // e.g., 30 days
+        uint256 deadline = block.timestamp + duration;
 
         escrows[escrowId] = Escrow({
             seller: msg.sender,
             buyer: buyer,
             price: price,
             assetHash: assetHash,
+            assetType: assetType,
+            assetId: assetId,
             depositAmount: 0,
             deadline: deadline,
             isActive: true,
@@ -109,7 +126,7 @@ contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, Ree
             isDisputed: false
         });
 
-        emit EscrowCreated(escrowId, msg.sender, buyer, price, assetHash);
+        emit EscrowCreated(escrowId, msg.sender, buyer, price, assetHash, assetType, assetId);
         return escrowId;
     }
 
@@ -120,8 +137,11 @@ contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, Ree
         if (escrow.depositAmount > 0) revert VertixEscrow__AlreadyDeposited();
         if (block.timestamp > escrow.deadline) revert VertixEscrow__EscrowExpired();
 
+        uint256 amount = escrow.price - escrow.depositAmount;
+        if (amount == 0) revert VertixEscrow__InsufficientFunds();
+
         // Transfer funds to contract
-        if (!paymentToken.transferFrom(msg.sender, address(this), escrow.price)) revert VertixEscrow__TransferFailed();
+        if (!paymentToken.transferFrom(msg.sender, address(this), amount)) revert VertixEscrow__TransferFailed();
         escrow.depositAmount = escrow.price;
 
         emit EscrowDeposited(escrowId, msg.sender, escrow.price);
