@@ -71,7 +71,7 @@ contract AssetVerifier is ChainlinkClient {
 
     function fulfillVerification(bytes32 requestId, bool isVerified) external {
         if (msg.sender != chainlinkConsumer) revert AssetVerifier__OnlyChainlinkConsumer();
-        VerificationRequest storage request = pendingVerifications[requestId];
+        VerificationRequest memory request = pendingVerifications[requestId];
         if (!request.isPending) revert AssetVerifier__RequestNotPending();
 
         if (isVerified) {

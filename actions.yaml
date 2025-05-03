@@ -1,0 +1,132 @@
+# name: Run Foundry Tests
+
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
+#     branches:
+#       - main
+
+# jobs:
+#   test:
+#     runs-on: ubuntu-latest
+#     steps:
+#       # Checkout the repository
+#       - name: Checkout Repository
+#         uses: actions/checkout@v4
+#         with:
+#           submodules: recursive # Include submodules (e.g., Foundry libraries)
+
+#       # Install Foundry
+#       - name: Install Foundry
+#         uses: foundry-rs/foundry-toolchain@v1
+#         with:
+#           version: nightly # Use the latest nightly build; adjust to a specific version if needed
+
+#       # Cache Foundry dependencies
+#       - name: Cache Foundry Dependencies
+#         uses: actions/cache@v3
+#         with:
+#           path: |
+#             ~/.foundry
+#             out
+#             cache
+#           key: ${{ runner.os }}-foundry-${{ hashFiles('**/foundry.toml', '**/remappings.txt', '**/package.json') }}
+#           restore-keys: |
+#             ${{ runner.os }}-foundry-
+
+#       # Install Node.js (for mock backend or additional scripts)
+#       - name: Set up Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '16' # Matches your original workflow
+
+#       # Install npm dependencies (e.g., for mock backend or scripts)
+#       - name: Install npm Dependencies
+#         run: npm install
+#         if: hashFiles('package.json') != '' # Only run if package.json exists
+
+#       # Install Forge dependencies (e.g., OpenZeppelin, Chainlink contracts)
+#       - name: Install Forge Dependencies
+#         run: forge install
+
+#       # Build the project
+#       - name: Build Contracts
+#         run: forge build
+#         env:
+#           FOUNDRY_PROFILE: ci # Optional: Use a specific profile for CI
+
+#       # Run tests
+#       - name: Run Tests
+#         run: forge test --match-path "test/**/*Test.sol" -vvvv
+#         env:
+#           FOUNDRY_PROFILE: ci
+#           # Mock environment variables for Chainlink or backend
+#           CHAINLINK_ORACLE_ADDRESS: "0x0000000000000000000000000000000000000000"
+#           CHAINLINK_JOB_ID: "mock-job-id"
+
+#       # Generate coverage report
+#       - name: Generate Coverage Report
+#         run: forge coverage --report lcov
+#         env:
+#           FOUNDRY_PROFILE: ci
+
+#       # Upload coverage report as artifact
+#       - name: Upload Coverage Report
+#         uses: actions/upload-artifact@v3
+#         with:
+#           name: coverage-report
+#           path: lcov.info
+#           retention-days: 7
+
+#       # Optional: Run a mock backend for /verify and /value endpoints
+#       - name: Start Mock Backend
+#         run: npm run start-mock-backend &
+#         if: hashFiles('scripts/mock-backend.js') != '' # Only run if mock backend script exists
+#         env:
+#           NODE_ENV: test
+
+#       # Optional: Run integration tests with mock backend
+#       - name: Run Integration Tests
+#         run: forge test --match-path "test/integration/**/*Test.sol" -vvvv
+#         if: hashFiles('test/integration/**/*Test.sol') != ''
+#         env:
+#           FOUNDRY_PROFILE: ci
+#           MOCK_BACKEND_URL: http://localhost:3000
+
+#   lint:
+#     runs-on: ubuntu-latest
+#     steps:
+#       # Checkout the repository
+#       - name: Checkout Repository
+#         uses: actions/checkout@v4
+#         with:
+#           submodules: recursive
+
+#       # Install Foundry
+#       - name: Install Foundry
+#         uses: foundry-rs/foundry-toolchain@v1
+#         with:
+#           version: nightly
+
+#       # Cache Foundry dependencies
+#       - name: Cache Foundry Dependencies
+#         uses: actions/cache@v3
+#         with:
+#           path: |
+#             ~/.foundry
+#             out
+#             cache
+#           key: ${{ runner.os }}-foundry-${{ hashFiles('**/foundry.toml', '**/remappings.txt') }}
+#           restore-keys: |
+#             ${{ runner.os }}-foundry-
+
+#       # Run Forge format check
+#       - name: Check Code Formatting
+#         run: forge fmt --check
+
+#       # Run Solhint for additional linting (optional)
+#       - name: Run Solhint
+#         run: npx solhint 'src/**/*.sol'
+#         if: hashFiles('.solhint.json') != '' # Only run if Solhint config exists

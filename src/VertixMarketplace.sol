@@ -239,7 +239,7 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
     ) external nonReentrant {
         if (price == 0) revert VertixMarketplace__InvalidPrice();
 
-     // Verify collection exists (optional: restrict to marketplace-created collections)
+        // Verify collection exists (optional: restrict to marketplace-created collections)
         if (collectionAddressToId[tokenAddress] == 0 && tokenAddress != address(this)) {
              // Allow external collections, but we can add stricter checks
         }
@@ -374,8 +374,6 @@ contract VertixMarketplace is Initializable, UUPSUpgradeable, OwnableUpgradeable
         if (!IVertixAssetVerifier(verifierContract).verifyAsset(msg.sender, assetType, assetId)) {
             revert VertixMarketplace__NotAssetOwner();
         }
-        if (keccak256(abi.encodePacked(assetType, assetId)) != assetHash) revert VertixMarketplace__InvalidAsset();
-
         uint256 escrowId = IVertixEscrow(escrowContract).createEscrow(buyer, price, assetHash, duration, assetType, assetId);
 
         emit NonNFTSaleCreated(escrowId, msg.sender, buyer, price, assetHash, assetType, assetId);

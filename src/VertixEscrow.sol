@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// Imports
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -43,8 +42,8 @@ contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, Ree
     address public feeRecipient; // Address to receive platform fees
     uint256 public disputeResolutionPeriod; // Time to resolve disputes (e.g., 7 days)
 
-    mapping(uint256 => Escrow) public escrows; // Escrow ID => Escrow details
-    mapping(uint256 => address) public disputeResolver; // Escrow ID => Resolver (admin or arbitrator)
+    mapping(uint256 escrowId => Escrow EscrowDetails) public escrows; // Escrow ID => Escrow details
+    mapping(uint256 escrowId => address resolver) public disputeResolver; // Escrow ID => Resolver (admin or arbitrator)
 
     // Events
     event EscrowCreated(
