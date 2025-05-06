@@ -1,234 +1,182 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-
-contract VertixEscrow is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
+/**
+ * @title VertixEscrow
+ * @dev escrow contract for non-NFT asset sales
+ */
+contract VertixEscrow is
+    Initializable,
+    ReentrancyGuardUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
     // Errors
-    error VertixEscrow__InvalidPrice();
-    error VertixEscrow__EscrowNotActive();
-    error VertixEscrow__Unauthorized();
-    error VertixEscrow__TransferFailed();
-    error VertixEscrow__FundsNotDeposited();
-    error VertixEscrow__AlreadyDeposited();
-    error VertixEscrow__EscrowExpired();
-    error VertixEscrow__DisputeNotResolved();
-    error VertixEscrow__InvalidAsset();
-    error VertixEscrow__InsufficientFunds();
+    error VertixEscrow__IncorrectAmountSent();
+    error VertixEscrow__EscrowAlreadyExists();
+    error VertixEscrow__NotEscrowParticipant();
+    error VertixEscrow__OnlyBuyerCanConfirm();
+    error VertixEscrow__EscrowAlreadyCompleted();
+    error VertixEscrow__EscrowInDispute();
+    error VertixEscrow__DisputeAlreadyRaised();
+    error VertixEscrow__NoActiveDispute();
+    error VertixEscrow__InvalidWinner();
+    error VertixEscrow__DeadlineNotPassed();
 
-    // Type Declarations
     struct Escrow {
         address seller;
         address buyer;
-        uint256 price;
-        bytes32 assetHash; // Hash of asset details (e.g., social media account, website)
-        string assetType; // e.g., "social_media", "domain", "app", "website"
-        string assetId; // e.g., "123", "example.com", "com.app.id"
-        uint256 depositAmount; // Amount deposited by buyer
-        uint256 deadline; // Escrow expiration timestamp
-        bool isActive;
-        bool isCompleted;
-        bool isDisputed;
+        uint96 amount;
+        uint32 deadline;
+        bool completed;
+        bool disputed;
     }
-    // State Variables
-    uint256 private _escrowId;
-    IERC20 public paymentToken; // Stablecoin or native token for payments
-    uint256 public platformFee; // Fee percentage (e.g., 2.5% = 250)
-    address public feeRecipient; // Address to receive platform fees
-    uint256 public disputeResolutionPeriod; // Time to resolve disputes (e.g., 7 days)
 
-    mapping(uint256 escrowId => Escrow EscrowDetails) public escrows; // Escrow ID => Escrow details
-    mapping(uint256 escrowId => address resolver) public disputeResolver; // Escrow ID => Resolver (admin or arbitrator)
+    // State variables
+    mapping(uint256 => Escrow) public escrows;
+    uint32 public escrowDuration;
 
     // Events
-    event EscrowCreated(
-        uint256 indexed escrowId,
-        address indexed seller,
-        address indexed buyer,
-        uint256 price,
-        bytes32 assetHash,
-        string assetType,
-        string assetId
-    );
-    event EscrowDeposited(uint256 indexed escrowId, address indexed buyer, uint256 amount);
-    event EscrowCompleted(uint256 indexed escrowId, address indexed seller, address indexed buyer);
-    event EscrowDisputed(uint256 indexed escrowId, address indexed seller, address indexed buyer);
-    event EscrowResolved(uint256 indexed escrowId, address indexed resolver, bool sellerWins);
-    event EscrowCancelled(uint256 indexed escrowId, address indexed seller, address indexed buyer);
+    event FundsLocked(uint256 indexed listingId, address indexed seller, address indexed buyer, uint256 amount);
+    event FundsReleased(uint256 indexed listingId, address indexed recipient, uint256 amount);
+    event DisputeRaised(uint256 indexed listingId);
+    event DisputeResolved(uint256 indexed listingId, address indexed winner);
 
     // Modifiers
-    modifier onlyEscrowParticipant(uint256 escrowId) {
-        if (escrows[escrowId].seller != msg.sender && escrows[escrowId].buyer != msg.sender) revert VertixEscrow__Unauthorized();
+    modifier onlyEscrowParticipant(uint256 listingId) {
+        Escrow storage e = escrows[listingId];
+        if (msg.sender != e.seller && msg.sender != e.buyer) {
+            revert VertixEscrow__NotEscrowParticipant();
+        }
         _;
     }
 
-    modifier onlyDisputeResolver(uint256 escrowId) {
-        if (disputeResolver[escrowId] != msg.sender) revert VertixEscrow__Unauthorized();
-        _;
-    }
-
-    // Functions
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    function initialize(
-        address _paymentToken,
-        uint256 _platformFee,
-        address _feeRecipient,
-        uint256 _disputeResolutionPeriod
-    ) external initializer {
-        __UUPSUpgradeable_init();
-        __Ownable_init(msg.sender);
+    // Constructor
+    function initialize() public initializer {
         __ReentrancyGuard_init();
-
-        paymentToken = IERC20(_paymentToken);
-        platformFee = _platformFee;
-        feeRecipient = _feeRecipient;
-        disputeResolutionPeriod = _disputeResolutionPeriod; // e.g., 7 days in seconds
-        _escrowId = 0;
+        __Ownable_init(msg.sender);
+        __UUPSUpgradeable_init();
+        escrowDuration = 7 days;
     }
 
-    // External Functions
-    function createEscrow(
-        address buyer,
-        uint256 price,
-        bytes32 assetHash,
-        uint256 duration,
-        string calldata assetType,
-        string calldata assetId
-    ) external nonReentrant returns (uint256) {
-        if (price == 0) revert VertixEscrow__InvalidPrice();
-        if (buyer == address(0)) revert VertixEscrow__Unauthorized();
-        if (bytes(assetType).length == 0 || bytes(assetId).length == 0) revert VertixEscrow__InvalidAsset();
+    // UUPS upgradeability
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
-        uint256 escrowId = _escrowId++;
-        uint256 deadline = block.timestamp + duration;
 
-        escrows[escrowId] = Escrow({
-            seller: msg.sender,
+    // Public functions
+    /**
+     * @dev Lock funds in escrow
+     * @param listingId The ID of the listing
+     * @param seller The address of the seller
+     * @param buyer The address of the buyer
+     */
+    function lockFunds(
+        uint256 listingId,
+        address seller,
+        address buyer
+    ) external payable nonReentrant {
+        if (msg.value == 0 || msg.value > type(uint96).max) revert VertixEscrow__IncorrectAmountSent();
+        if (escrows[listingId].seller != address(0)) revert VertixEscrow__EscrowAlreadyExists();
+
+        escrows[listingId] = Escrow({
+            seller: seller,
             buyer: buyer,
-            price: price,
-            assetHash: assetHash,
-            assetType: assetType,
-            assetId: assetId,
-            depositAmount: 0,
-            deadline: deadline,
-            isActive: true,
-            isCompleted: false,
-            isDisputed: false
+            amount: uint96(msg.value),
+            deadline: uint32(block.timestamp + escrowDuration),
+            completed: false,
+            disputed: false
         });
 
-        emit EscrowCreated(escrowId, msg.sender, buyer, price, assetHash, assetType, assetId);
-        return escrowId;
+        emit FundsLocked(listingId, seller, buyer, msg.value);
     }
 
-    function depositFunds(uint256 escrowId) external nonReentrant {
-        Escrow memory escrow = escrows[escrowId];
-        if (!escrow.isActive) revert VertixEscrow__EscrowNotActive();
-        if (msg.sender != escrow.buyer) revert VertixEscrow__Unauthorized();
-        if (escrow.depositAmount > 0) revert VertixEscrow__AlreadyDeposited();
-        if (block.timestamp > escrow.deadline) revert VertixEscrow__EscrowExpired();
+    /**
+     * @dev Buyer confirms asset transfer
+     * @param listingId The ID of the listing
+     */
+    function confirmTransfer(uint256 listingId) external nonReentrant onlyEscrowParticipant(listingId) {
+        Escrow memory escrow = escrows[listingId];
 
-        uint256 amount = escrow.price - escrow.depositAmount;
-        if (amount == 0) revert VertixEscrow__InsufficientFunds();
+        if (msg.sender != escrow.buyer) revert VertixEscrow__OnlyBuyerCanConfirm();
+        if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
+        if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
 
-        // Transfer funds to contract
-        if (!paymentToken.transferFrom(msg.sender, address(this), amount)) revert VertixEscrow__TransferFailed();
-        escrow.depositAmount = escrow.price;
+        escrow.completed = true;
+        uint256 amount = escrow.amount;
+        delete escrows[listingId];
 
-        emit EscrowDeposited(escrowId, msg.sender, escrow.price);
+        (bool success, ) = escrow.seller.call{value: amount}("");
+        require(success, "Transfer failed");
+
+        emit FundsReleased(listingId, escrow.seller, amount);
     }
 
-    function completeEscrow(uint256 escrowId) external nonReentrant onlyEscrowParticipant(escrowId) {
-        Escrow memory escrow = escrows[escrowId];
-        if (!escrow.isActive) revert VertixEscrow__EscrowNotActive();
-        if (escrow.isDisputed) revert VertixEscrow__DisputeNotResolved();
-        if (escrow.depositAmount != escrow.price) revert VertixEscrow__FundsNotDeposited();
-        if (block.timestamp > escrow.deadline) revert VertixEscrow__EscrowExpired();
+    /**
+     * @dev Raise a dispute
+     * @param listingId The ID of the listing
+     */
+    function raiseDispute(uint256 listingId) external onlyEscrowParticipant(listingId) {
+        Escrow storage escrow = escrows[listingId];
+        if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
+        if (escrow.disputed) revert VertixEscrow__DisputeAlreadyRaised();
 
-        uint256 fee = (escrow.price * platformFee) / 10000;
-        uint256 sellerProceeds = escrow.price - fee;
-
-        // Transfer fee to feeRecipient and proceeds to seller
-        if (!paymentToken.transfer(feeRecipient, fee)) revert VertixEscrow__TransferFailed();
-        if (!paymentToken.transfer(escrow.seller, sellerProceeds)) revert VertixEscrow__TransferFailed();
-
-        escrow.isActive = false;
-        escrow.isCompleted = true;
-
-        emit EscrowCompleted(escrowId, escrow.seller, escrow.buyer);
+        escrow.disputed = true;
+        emit DisputeRaised(listingId);
     }
 
-    function disputeEscrow(uint256 escrowId) external nonReentrant onlyEscrowParticipant(escrowId) {
-        Escrow memory escrow = escrows[escrowId];
-        if (!escrow.isActive) revert VertixEscrow__EscrowNotActive();
-        if (escrow.depositAmount != escrow.price) revert VertixEscrow__FundsNotDeposited();
-        if (block.timestamp > escrow.deadline) revert VertixEscrow__EscrowExpired();
+    /**
+     * @dev Admin resolves dispute
+     * @param listingId The ID of the listing
+     * @param winner The address of the dispute winner
+     */
+    function resolveDispute(uint256 listingId, address winner) external onlyOwner nonReentrant {
+        Escrow storage escrow = escrows[listingId];
+        if (!escrow.disputed) revert VertixEscrow__NoActiveDispute();
+        if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
+        if (winner != escrow.seller && winner != escrow.buyer) revert VertixEscrow__InvalidWinner();
 
-        escrow.isDisputed = true;
-        disputeResolver[escrowId] = owner(); // Admin as default resolver
+        escrow.completed = true;
+        uint256 amount = escrow.amount;
+        delete escrows[listingId];
 
-        emit EscrowDisputed(escrowId, escrow.seller, escrow.buyer);
+        (bool success, ) = winner.call{value: amount}("");
+        require(success, "Transfer failed");
+
+        emit FundsReleased(listingId, winner, amount);
+        emit DisputeResolved(listingId, winner);
     }
 
-    function resolveDispute(uint256 escrowId, bool sellerWins) external nonReentrant onlyDisputeResolver(escrowId) {
-        Escrow memory escrow = escrows[escrowId];
-        if (!escrow.isActive || !escrow.isDisputed) revert VertixEscrow__EscrowNotActive();
+    /**
+     * @dev Refund if deadline passes
+     * @param listingId The ID of the listing
+     */
+    function refund(uint256 listingId) external nonReentrant {
+        Escrow storage escrow = escrows[listingId];
+        if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
+        if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
+        if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
 
-        address recipient = sellerWins ? escrow.seller : escrow.buyer;
-        uint256 fee = sellerWins ? (escrow.price * platformFee) / 10000 : 0;
-        uint256 proceeds = escrow.price - fee;
+        escrow.completed = true;
+        uint256 amount = escrow.amount;
+        delete escrows[listingId];
 
-        // Transfer funds
-        if (fee > 0) {
-            if (!paymentToken.transfer(feeRecipient, fee)) revert VertixEscrow__TransferFailed();
-        }
-        if (!paymentToken.transfer(recipient, proceeds)) revert VertixEscrow__TransferFailed();
+        (bool success, ) = escrow.buyer.call{value: amount}("");
+        require(success, "Transfer failed");
 
-        escrow.isActive = false;
-        escrow.isCompleted = true;
-
-        emit EscrowResolved(escrowId, msg.sender, sellerWins);
+        emit FundsReleased(listingId, escrow.buyer, amount);
     }
 
-    function cancelEscrow(uint256 escrowId) external nonReentrant onlyEscrowParticipant(escrowId) {
-        Escrow memory escrow = escrows[escrowId];
-        if (!escrow.isActive) revert VertixEscrow__EscrowNotActive();
-        if (escrow.isDisputed) revert VertixEscrow__DisputeNotResolved();
-        if (escrow.depositAmount > 0 && block.timestamp <= escrow.deadline) {
-            revert VertixEscrow__Unauthorized(); // Cannot cancel if funds deposited and not expired
-        }
-
-        if (escrow.depositAmount > 0) {
-            // Refund buyer if funds were deposited
-            if (!paymentToken.transfer(escrow.buyer, escrow.depositAmount)) revert VertixEscrow__TransferFailed();
-        }
-
-        escrow.isActive = false;
-        emit EscrowCancelled(escrowId, escrow.seller, escrow.buyer);
-    }
-
-    // Internal Functions
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
-
-    // View & Pure Functions
-    function getEscrow(uint256 escrowId) external view returns (Escrow memory) {
-        return escrows[escrowId];
-    }
-
-    // Admin Functions
-    function setDisputeResolver(uint256 escrowId, address resolver) external onlyOwner {
-        disputeResolver[escrowId] = resolver;
-    }
-
-    function setDisputeResolutionPeriod(uint256 period) external onlyOwner {
-        disputeResolutionPeriod = period;
+    // View functions
+    /**
+     * @dev Get escrow details
+     * @param listingId The ID of the listing
+     */
+    function getEscrow(uint256 listingId) external view returns (Escrow memory) {
+        return escrows[listingId];
     }
 }
