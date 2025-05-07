@@ -6,12 +6,14 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IVertixNFT} from "./interfaces/IVertixNFT.sol";
+import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 import {VertixUtils} from "./libraries/VertixUtils.sol";
 
 /**
  * @title VertixMarketplace
- * @dev Decentralized marketplace for NFT and non-NFT assets
+ * @dev Decentralized marketplace for NFT and non-NFT assets with royalties and platform fees
  */
 contract VertixMarketplace is
     Initializable,
@@ -29,8 +31,8 @@ contract VertixMarketplace is
     error VertixMarketplace__TransferFailed();
     error VertixMarketplace__InvalidNFTContract();
     error VertixMarketplace__DuplicateListing();
+    error VertixMarketplace__NotSeller();
 
-    // Type declarations
     struct NFTListing {
         address seller;
         address nftContract;
@@ -51,6 +53,7 @@ contract VertixMarketplace is
 
     // State variables
     IVertixNFT public nftContract;
+    IVertixGovernance public governanceContract;
     address public escrowContract;
     uint256 private _listingIdCounter;
     mapping(uint256 => NFTListing) private _nftListings;
@@ -72,9 +75,24 @@ contract VertixMarketplace is
         string assetId,
         uint256 price
     );
-    event NFTBought(uint256 indexed listingId, address indexed buyer, uint256 price);
-    event NonNFTBought(uint256 indexed listingId, address indexed buyer, uint256 price);
-    event ListingCancelled(uint256 indexed listingId, bool isNFT);
+    event NFTBought(
+        uint256 indexed listingId,
+        address indexed buyer,
+        uint256 price,
+        uint256 royaltyAmount,
+        address royaltyRecipient,
+        uint256 platformFee,
+        address feeRecipient
+    );
+    event NonNFTBought(
+        uint256 indexed listingId,
+        address indexed buyer,
+        uint256 price,
+        uint256 platformFee,
+        address feeRecipient
+    );
+    event NFTListingCancelled(uint256 indexed listingId, address indexed seller);
+    event NonNFTListingCancelled(uint256 indexed listingId, address indexed seller);
 
     // Modifiers
     modifier onlyValidNFTListing(uint256 listingId) {
@@ -88,18 +106,22 @@ contract VertixMarketplace is
     }
 
     // Initialization
-    function initialize(address _nftContract, address _escrowContract) public initializer {
+    function initialize(
+        address _nftContract,
+        address _governanceContract,
+        address _escrowContract
+    ) public initializer {
         __ReentrancyGuard_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         nftContract = IVertixNFT(_nftContract);
+        governanceContract = IVertixGovernance(_governanceContract);
         escrowContract = _escrowContract;
         _listingIdCounter = 1;
     }
 
     // Upgrade authorization
     function _authorizeUpgrade(address) internal override onlyOwner {}
-
 
     // Public functions
     /**
@@ -172,49 +194,123 @@ contract VertixMarketplace is
     }
 
     /**
-     * @dev Buy an NFT listing
+     * @dev Buy an NFT listing, paying royalties and platform fees
      * @param listingId ID of the listing to purchase
      */
     function buyNFT(uint256 listingId) external payable nonReentrant onlyValidNFTListing(listingId) {
         NFTListing memory listing = _nftListings[listingId];
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
 
+        // Get royalty info
+        (address royaltyRecipient, uint256 royaltyAmount) = IERC2981(address(nftContract)).royaltyInfo(
+            listing.tokenId,
+            listing.price
+        );
+
+        // Get platform fee info
+        (uint256 platformFeeBps, address feeRecipient) = governanceContract.getFeeConfig();
+        uint256 platformFee = (listing.price * platformFeeBps) / 10000;
+
+        // Validate total payment
+        uint256 totalDeduction = royaltyAmount + platformFee;
+        if (totalDeduction > listing.price) revert VertixMarketplace__InsufficientPayment();
+
+        // Mark listing as inactive and remove from hashes
         _nftListings[listingId].active = false;
         delete _listingHashes[keccak256(abi.encodePacked(listing.nftContract, listing.tokenId))];
 
+        // Transfer NFT to buyer
         IERC721(listing.nftContract).transferFrom(address(this), msg.sender, listing.tokenId);
 
-        (bool success, ) = listing.seller.call{value: listing.price}("");
-        if (!success) revert VertixMarketplace__TransferFailed();
+        // Transfer royalties, platform fee, and seller proceeds
+        if (royaltyAmount > 0) {
+            (bool royaltySuccess, ) = payable(royaltyRecipient).call{value: royaltyAmount}("");
+            if (!royaltySuccess) revert VertixMarketplace__TransferFailed();
+        }
+        if (platformFee > 0) {
+            (bool feeSuccess, ) = payable(feeRecipient).call{value: platformFee}("");
+            if (!feeSuccess) revert VertixMarketplace__TransferFailed();
+        }
+        (bool sellerSuccess, ) = payable(listing.seller).call{value: listing.price - totalDeduction}("");
+        if (!sellerSuccess) revert VertixMarketplace__TransferFailed();
 
+        // Refund excess payment
         _refundExcessPayment(msg.value, listing.price);
-        emit NFTBought(listingId, msg.sender, listing.price);
+
+        emit NFTBought(listingId, msg.sender, listing.price, royaltyAmount, royaltyRecipient, platformFee, feeRecipient);
     }
 
     /**
-     * @dev Buy a non-NFT asset listing
+     * @dev Buy a non-NFT asset listing, paying platform fee
      * @param listingId ID of the listing to purchase
      */
     function buyNonNFTAsset(uint256 listingId) external payable nonReentrant onlyValidNonNFTListing(listingId) {
         NonNFTListing memory listing = _nonNFTListings[listingId];
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
 
+        // Get platform fee info
+        (uint256 platformFeeBps, address feeRecipient) = governanceContract.getFeeConfig();
+        uint256 platformFee = (listing.price * platformFeeBps) / 10000;
+
+        // Validate total payment
+        if (platformFee > listing.price) revert VertixMarketplace__InsufficientPayment();
+
+        // Mark listing as inactive and remove from hashes
         _nonNFTListings[listingId].active = false;
         delete _listingHashes[keccak256(abi.encodePacked(listing.seller, listing.assetId))];
 
-        (bool success, ) = escrowContract.call{value: listing.price}(
+        // Transfer platform fee
+        if (platformFee > 0) {
+            (bool feeSuccess, ) = payable(feeRecipient).call{value: platformFee}("");
+            if (!feeSuccess) revert VertixMarketplace__TransferFailed();
+        }
+
+        // Transfer remaining funds to escrow
+        uint256 escrowAmount = listing.price - platformFee;
+        (bool success, ) = escrowContract.call{value: escrowAmount}(
             abi.encodeWithSignature(
                 "lockFunds(uint256,address,address,uint256)",
                 listingId,
                 listing.seller,
                 msg.sender,
-                listing.price
+                escrowAmount
             )
         );
         if (!success) revert VertixMarketplace__TransferFailed();
 
+        // Refund excess payment
         _refundExcessPayment(msg.value, listing.price);
-        emit NonNFTBought(listingId, msg.sender, listing.price);
+
+        emit NonNFTBought(listingId, msg.sender, listing.price, platformFee, feeRecipient);
+    }
+
+    /**
+     * @dev Cancel an NFT listing
+     * @param listingId The ID of the listing
+     */
+    function cancelNFTListing(uint256 listingId) external nonReentrant onlyValidNFTListing(listingId) {
+        NFTListing memory listing = _nftListings[listingId];
+        if (msg.sender != listing.seller) revert VertixMarketplace__NotSeller();
+
+        _nftListings[listingId].active = false;
+        delete _listingHashes[keccak256(abi.encodePacked(listing.nftContract, listing.tokenId))];
+        IERC721(listing.nftContract).transferFrom(address(this), listing.seller, listing.tokenId);
+
+        emit NFTListingCancelled(listingId, listing.seller);
+    }
+
+    /**
+     * @dev Cancel a non-NFT listing
+     * @param listingId The ID of the listing
+     */
+    function cancelNonNFTListing(uint256 listingId) external nonReentrant onlyValidNonNFTListing(listingId) {
+        NonNFTListing memory listing = _nonNFTListings[listingId];
+        if (msg.sender != listing.seller) revert VertixMarketplace__NotSeller();
+
+        _nonNFTListings[listingId].active = false;
+        delete _listingHashes[keccak256(abi.encodePacked(listing.seller, listing.assetId))];
+
+        emit NonNFTListingCancelled(listingId, listing.seller);
     }
 
     // Internal functions

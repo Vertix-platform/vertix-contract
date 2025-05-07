@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// Imports
 import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import {ERC721URIStorageUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+import {ERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/token/common/ERC2981Upgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -11,16 +13,16 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 
 /**
  * @title VertixNFT
- * @dev NFT contract supporting single mints and collections
+ * @dev NFT contract supporting single mints, collections, and royalties
  */
 contract VertixNFT is
     Initializable,
     ERC721Upgradeable,
     ERC721URIStorageUpgradeable,
+    ERC2981Upgradeable,
     OwnableUpgradeable,
     UUPSUpgradeable
 {
-
     // Errors
     error VertixNFT__InvalidCollection();
     error VertixNFT__NotCollectionCreator();
@@ -31,8 +33,9 @@ contract VertixNFT is
     error VertixNFT__ExceedsMaxCollectionSize();
     error VertixNFT__SocialMediaIdAlreadyUsed();
     error VertixNFT__InvalidSignature();
+    error VertixNFT__InvalidRoyaltyPercentage();
 
-
+    // Type declarations
     struct Collection {
         address creator;
         string name;
@@ -45,6 +48,7 @@ contract VertixNFT is
 
     // State variables
     uint8 public constant MAX_COLLECTION_SIZE = 100;
+    uint256 public constant MAX_ROYALTY_BPS = 1000; // 10% max royalty
     uint256 private _nextTokenId;
     uint256 private _nextCollectionId;
     address public verificationServer; // Address authorized to verify social media links
@@ -67,20 +71,25 @@ contract VertixNFT is
         uint256 indexed tokenId,
         uint256 collectionId,
         string uri,
-        bytes32 metadataHash
+        bytes32 metadataHash,
+        address royaltyRecipient,
+        uint96 royaltyBps
     );
     event SocialMediaNFTMinted(
         address indexed to,
         uint256 indexed tokenId,
         string socialMediaId,
         string uri,
-        bytes32 metadataHash
+        bytes32 metadataHash,
+        address royaltyRecipient,
+        uint96 royaltyBps
     );
 
     // Constructor
     function initialize(address _verificationServer) public initializer {
         __ERC721_init("VertixNFT", "VNFT");
         __ERC721URIStorage_init();
+        __ERC2981_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         verificationServer = _verificationServer;
@@ -90,8 +99,6 @@ contract VertixNFT is
 
     // UUPS upgradeability
     function _authorizeUpgrade(address) internal override onlyOwner {}
-
-    // External functions
 
     // Public functions
     /**
@@ -133,19 +140,22 @@ contract VertixNFT is
      * @param collectionId Collection ID
      * @param uri Token URI
      * @param metadataHash Metadata hash for verification
+     * @param royaltyBps Royalty percentage in basis points (e.g., 500 = 5%)
      */
     function mintToCollection(
         address to,
         uint256 collectionId,
         string calldata uri,
-        bytes32 metadataHash
+        bytes32 metadataHash,
+        uint96 royaltyBps
     ) external {
         Collection storage collection = collections[collectionId];
         if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
         if (msg.sender != collection.creator) revert VertixNFT__NotCollectionCreator();
         if (collection.currentSupply >= collection.maxSupply) revert VertixNFT__MaxSupplyReached();
+        if (royaltyBps > MAX_ROYALTY_BPS) revert VertixNFT__InvalidRoyaltyPercentage();
 
-        _mintNFT(to, collectionId, uri, metadataHash);
+        _mintNFT(to, collectionId, uri, metadataHash, collection.creator, royaltyBps);
         collection.currentSupply++;
     }
 
@@ -154,9 +164,11 @@ contract VertixNFT is
      * @param to Recipient address
      * @param uri Token URI
      * @param metadataHash Metadata hash for verification
+     * @param royaltyBps Royalty percentage in basis points (e.g., 500 = 5%)
      */
-    function mintSingleNFT(address to, string calldata uri, bytes32 metadataHash) external {
-        _mintNFT(to, 0, uri, metadataHash);
+    function mintSingleNFT(address to, string calldata uri, bytes32 metadataHash, uint96 royaltyBps) external {
+        if (royaltyBps > MAX_ROYALTY_BPS) revert VertixNFT__InvalidRoyaltyPercentage();
+        _mintNFT(to, 0, uri, metadataHash, msg.sender, royaltyBps);
     }
 
     /**
@@ -167,12 +179,13 @@ contract VertixNFT is
         verificationServer = newServer;
     }
 
-   /**
+    /**
      * @dev Mint social media connected NFT with signature verification
      * @param to Recipient address (must match signed message)
      * @param socialMediaId Verified social media identifier
      * @param uri Token URI
      * @param metadataHash Metadata hash for verification
+     * @param royaltyBps Royalty percentage in basis points (e.g., 500 = 5%)
      * @param signature Server-signed proof of verification
      */
     function mintSocialMediaNFT(
@@ -180,11 +193,13 @@ contract VertixNFT is
         string calldata socialMediaId,
         string calldata uri,
         bytes32 metadataHash,
+        uint96 royaltyBps,
         bytes calldata signature
     ) external {
         if (usedSocialMediaIds[socialMediaId]) {
             revert VertixNFT__SocialMediaIdAlreadyUsed();
         }
+        if (royaltyBps > MAX_ROYALTY_BPS) revert VertixNFT__InvalidRoyaltyPercentage();
 
         // Verify the signature
         bytes32 messageHash = keccak256(abi.encodePacked(to, socialMediaId));
@@ -200,26 +215,41 @@ contract VertixNFT is
         _setTokenURI(tokenId, uri);
         metadataHashes[tokenId] = metadataHash;
         usedSocialMediaIds[socialMediaId] = true;
+        _setTokenRoyalty(tokenId, to, royaltyBps);
 
-        emit SocialMediaNFTMinted(to, tokenId, socialMediaId, uri, metadataHash);
+        emit SocialMediaNFTMinted(to, tokenId, socialMediaId, uri, metadataHash, to, royaltyBps);
     }
 
     // Internal functions
     /**
      * @dev Internal mint function with common logic
+     * @param to Recipient address
+     * @param collectionId Collection ID (0 for single NFTs)
+     * @param uri Token URI
+     * @param metadataHash Metadata hash for verification
+     * @param royaltyRecipient Royalty recipient address
+     * @param royaltyBps Royalty percentage in basis points
      */
-    function _mintNFT(address to, uint256 collectionId, string calldata uri, bytes32 metadataHash) internal {
+    function _mintNFT(
+        address to,
+        uint256 collectionId,
+        string calldata uri,
+        bytes32 metadataHash,
+        address royaltyRecipient,
+        uint96 royaltyBps
+    ) internal {
         uint256 tokenId = _nextTokenId++;
         _mint(to, tokenId);
         _setTokenURI(tokenId, uri);
         metadataHashes[tokenId] = metadataHash;
+        _setTokenRoyalty(tokenId, royaltyRecipient, royaltyBps);
 
         if (collectionId > 0) {
             tokenToCollection[tokenId] = collectionId;
             collections[collectionId].tokenIds.push(tokenId);
         }
 
-        emit NFTMinted(to, tokenId, collectionId, uri, metadataHash);
+        emit NFTMinted(to, tokenId, collectionId, uri, metadataHash, royaltyRecipient, royaltyBps);
     }
 
     // View functions
@@ -236,14 +266,18 @@ contract VertixNFT is
      * @dev Get collection details
      * @param collectionId Collection ID
      */
-    function getCollectionDetails(uint256 collectionId) external view returns (
-        address creator,
-        string memory name,
-        string memory symbol,
-        string memory image,
-        uint256 maxSupply,
-        uint256 currentSupply
-    ) {
+    function getCollectionDetails(uint256 collectionId)
+        external
+        view
+        returns (
+            address creator,
+            string memory name,
+            string memory symbol,
+            string memory image,
+            uint256 maxSupply,
+            uint256 currentSupply
+        )
+    {
         Collection memory collection = collections[collectionId];
         if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
 
@@ -270,7 +304,7 @@ contract VertixNFT is
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC721Upgradeable, ERC721URIStorageUpgradeable)
+        override(ERC721Upgradeable, ERC721URIStorageUpgradeable, ERC2981Upgradeable)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);

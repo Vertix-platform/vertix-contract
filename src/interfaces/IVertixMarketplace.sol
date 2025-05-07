@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../libraries/VertixUtils.sol";
+import {VertixUtils} from "../libraries/VertixUtils.sol";
 
 // Interface for the VertixMarketplace contract
 interface IVertixMarketplace {
@@ -48,12 +48,6 @@ interface IVertixMarketplace {
     // Get non-NFT listing details
     function getNonNFTListing(uint256 listingId) external view returns (NonNFTListing memory);
 
-    // Get all active NFT listing IDs
-    function getActiveNFTListings() external view returns (uint256[] memory);
-
-    // Get all active non-NFT listing IDs
-    function getActiveNonNFTListings() external view returns (uint256[] memory);
-
     // Get total number of listings
     function getTotalListings() external view returns (uint256);
 
@@ -72,6 +66,14 @@ interface IVertixMarketplace {
         string assetId,
         uint256 price
     );
-    event NFTBought(uint256 indexed listingId, address indexed buyer, uint256 price);
-    event NonNFTBought(uint256 indexed listingId, address indexed buyer, uint256 price);
+    event NFTBought(
+        uint256 indexed listingId,
+        address indexed buyer,
+        uint256 price,
+        uint256 royaltyAmount,
+        address royaltyRecipient,
+        uint256 platformFee,
+        address feeRecipient
+    );
+    event NonNFTBought(uint256 indexed listingId, address indexed buyer, uint256 price, uint256 platformFee, address feeRecipient);
 }

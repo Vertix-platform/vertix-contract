@@ -121,7 +121,7 @@ contract VertixEscrow is
      * @param listingId The ID of the listing
      */
     function raiseDispute(uint256 listingId) external onlyEscrowParticipant(listingId) {
-        Escrow storage escrow = escrows[listingId];
+        Escrow memory escrow = escrows[listingId];
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (escrow.disputed) revert VertixEscrow__DisputeAlreadyRaised();
 
@@ -135,7 +135,7 @@ contract VertixEscrow is
      * @param winner The address of the dispute winner
      */
     function resolveDispute(uint256 listingId, address winner) external onlyOwner nonReentrant {
-        Escrow storage escrow = escrows[listingId];
+        Escrow memory escrow = escrows[listingId];
         if (!escrow.disputed) revert VertixEscrow__NoActiveDispute();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (winner != escrow.seller && winner != escrow.buyer) revert VertixEscrow__InvalidWinner();
@@ -156,7 +156,7 @@ contract VertixEscrow is
      * @param listingId The ID of the listing
      */
     function refund(uint256 listingId) external nonReentrant {
-        Escrow storage escrow = escrows[listingId];
+        Escrow memory escrow = escrows[listingId];
         if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
