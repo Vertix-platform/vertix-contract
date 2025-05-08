@@ -5,6 +5,7 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 /**
  * @title VertixEscrow
@@ -14,7 +15,8 @@ contract VertixEscrow is
     Initializable,
     ReentrancyGuardUpgradeable,
     OwnableUpgradeable,
-    UUPSUpgradeable
+    UUPSUpgradeable,
+    PausableUpgradeable
 {
     // Errors
     error VertixEscrow__IncorrectAmountSent();
@@ -61,12 +63,20 @@ contract VertixEscrow is
         __ReentrancyGuard_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
+        __Pausable_init();
         escrowDuration = 7 days;
     }
 
     // UUPS upgradeability
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     // Public functions
     /**
@@ -79,7 +89,7 @@ contract VertixEscrow is
         uint256 listingId,
         address seller,
         address buyer
-    ) external payable nonReentrant {
+    ) external payable nonReentrant whenNotPaused {
         if (msg.value == 0 || msg.value > type(uint96).max) revert VertixEscrow__IncorrectAmountSent();
         if (escrows[listingId].seller != address(0)) revert VertixEscrow__EscrowAlreadyExists();
 
@@ -99,7 +109,7 @@ contract VertixEscrow is
      * @dev Buyer confirms asset transfer
      * @param listingId The ID of the listing
      */
-    function confirmTransfer(uint256 listingId) external nonReentrant onlyEscrowParticipant(listingId) {
+    function confirmTransfer(uint256 listingId) external nonReentrant whenNotPaused onlyEscrowParticipant(listingId) {
         Escrow memory escrow = escrows[listingId];
 
         if (msg.sender != escrow.buyer) revert VertixEscrow__OnlyBuyerCanConfirm();
@@ -120,7 +130,7 @@ contract VertixEscrow is
      * @dev Raise a dispute
      * @param listingId The ID of the listing
      */
-    function raiseDispute(uint256 listingId) external onlyEscrowParticipant(listingId) {
+    function raiseDispute(uint256 listingId) external whenNotPaused onlyEscrowParticipant(listingId) {
         Escrow memory escrow = escrows[listingId];
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (escrow.disputed) revert VertixEscrow__DisputeAlreadyRaised();
@@ -134,7 +144,7 @@ contract VertixEscrow is
      * @param listingId The ID of the listing
      * @param winner The address of the dispute winner
      */
-    function resolveDispute(uint256 listingId, address winner) external onlyOwner nonReentrant {
+    function resolveDispute(uint256 listingId, address winner) external onlyOwner nonReentrant whenNotPaused {
         Escrow memory escrow = escrows[listingId];
         if (!escrow.disputed) revert VertixEscrow__NoActiveDispute();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
@@ -155,7 +165,7 @@ contract VertixEscrow is
      * @dev Refund if deadline passes
      * @param listingId The ID of the listing
      */
-    function refund(uint256 listingId) external nonReentrant {
+    function refund(uint256 listingId) external nonReentrant whenNotPaused {
         Escrow memory escrow = escrows[listingId];
         if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
@@ -171,7 +181,9 @@ contract VertixEscrow is
         emit FundsReleased(listingId, escrow.buyer, amount);
     }
 
-    // View functions
+    /*//////////////////////////////////////////////////////////////
+                    VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
     /**
      * @dev Get escrow details
      * @param listingId The ID of the listing

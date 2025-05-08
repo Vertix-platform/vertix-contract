@@ -10,6 +10,7 @@ import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IVertixNFT} from "./interfaces/IVertixNFT.sol";
 import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 import {VertixUtils} from "./libraries/VertixUtils.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 /**
  * @title VertixMarketplace
@@ -19,7 +20,8 @@ contract VertixMarketplace is
     Initializable,
     ReentrancyGuardUpgradeable,
     OwnableUpgradeable,
-    UUPSUpgradeable
+    UUPSUpgradeable,
+    PausableUpgradeable
 {
     using VertixUtils for *;
 
@@ -114,6 +116,7 @@ contract VertixMarketplace is
         __ReentrancyGuard_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
+        __Pausable_init();
         nftContract = IVertixNFT(_nftContract);
         governanceContract = IVertixGovernance(_governanceContract);
         escrowContract = _escrowContract;
@@ -122,6 +125,14 @@ contract VertixMarketplace is
 
     // Upgrade authorization
     function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     // Public functions
     /**
@@ -134,7 +145,7 @@ contract VertixMarketplace is
         address nftContractAddr,
         uint256 tokenId,
         uint256 price
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         VertixUtils.validatePrice(price);
         if (nftContractAddr != address(nftContract)) revert VertixMarketplace__InvalidNFTContract();
         if (IERC721(nftContractAddr).ownerOf(tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
@@ -171,7 +182,7 @@ contract VertixMarketplace is
         uint256 price,
         string calldata metadata,
         bytes calldata verificationProof
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         VertixUtils.validatePrice(price);
         if (assetType > uint8(VertixUtils.AssetType.Other)) revert VertixMarketplace__InvalidAssetType();
 
@@ -197,7 +208,7 @@ contract VertixMarketplace is
      * @dev Buy an NFT listing, paying royalties and platform fees
      * @param listingId ID of the listing to purchase
      */
-    function buyNFT(uint256 listingId) external payable nonReentrant onlyValidNFTListing(listingId) {
+    function buyNFT(uint256 listingId) external payable nonReentrant whenNotPaused onlyValidNFTListing(listingId) {
         NFTListing memory listing = _nftListings[listingId];
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
 
@@ -244,7 +255,7 @@ contract VertixMarketplace is
      * @dev Buy a non-NFT asset listing, paying platform fee
      * @param listingId ID of the listing to purchase
      */
-    function buyNonNFTAsset(uint256 listingId) external payable nonReentrant onlyValidNonNFTListing(listingId) {
+    function buyNonNFTAsset(uint256 listingId) external payable nonReentrant whenNotPaused onlyValidNonNFTListing(listingId) {
         NonNFTListing memory listing = _nonNFTListings[listingId];
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
 
@@ -348,5 +359,89 @@ contract VertixMarketplace is
      */
     function getTotalListings() external view returns (uint256) {
         return _listingIdCounter;
+    }
+
+    function getListingsByCollection(uint256 collectionId) external view returns (uint256[] memory) {
+        uint256[] memory tokenIds = nftContract.getCollectionTokens(collectionId);
+        uint256[] memory listingIds = new uint256[](tokenIds.length);
+        uint256 count = 0;
+
+        for (uint i = 0; i < tokenIds.length; i++) {
+            bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
+            if (_listingHashes[listingHash]) {
+                for (uint j = 1; j < _listingIdCounter; j++) {
+                    if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
+                        listingIds[count] = j;
+                        count++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        uint256[] memory result = new uint256[](count);
+        for (uint i = 0; i < count; i++) {
+            result[i] = listingIds[i];
+        }
+        return result;
+    }
+
+    function getListingsByPriceRange(uint256 minPrice, uint256 maxPrice) external view returns (uint256[] memory) {
+        uint256[] memory listingIds = new uint256[](0);
+        uint256 count = 0;
+
+        for (uint i = 1; i < _listingIdCounter; i++) {
+            if (_nftListings[i].active && _nftListings[i].price >= minPrice && _nftListings[i].price <= maxPrice) {
+                // Manually resize the array
+                uint256[] memory newListingIds = new uint256[](count + 1);
+                for (uint j = 0; j < count; j++) {
+                    newListingIds[j] = listingIds[j];
+                }
+                newListingIds[count] = i;
+                listingIds = newListingIds;
+                count++;
+            }
+        }
+
+        return listingIds;
+    }
+
+    function getListingsByAssetType(VertixUtils.AssetType assetType) external view returns (uint256[] memory) {
+        uint256[] memory listingIds = new uint256[](0);
+        uint256 count = 0;
+
+        for (uint i = 1; i < _listingIdCounter; i++) {
+            if (_nonNFTListings[i].active && _nonNFTListings[i].assetType == assetType) {
+                // Manually resize the array
+                uint256[] memory newListingIds = new uint256[](count + 1);
+                for (uint j = 0; j < count; j++) {
+                    newListingIds[j] = listingIds[j];
+                }
+                newListingIds[count] = i;
+                listingIds = newListingIds;
+                count++;
+            }
+        }
+
+        return listingIds;
+    }
+
+    function getPurchaseDetails(uint256 listingId) external view returns (
+        uint256 price,
+        uint256 royaltyAmount,
+        address royaltyRecipient,
+        uint256 platformFee,
+        address feeRecipient,
+        uint256 sellerProceeds
+    ) {
+        NFTListing memory listing = _nftListings[listingId];
+        if(!listing.active) revert VertixMarketplace__InvalidListing();
+
+        (royaltyRecipient, royaltyAmount) = IERC2981(address(nftContract)).royaltyInfo(listing.tokenId, listing.price);
+        (uint16 feeBps, address recipient) = governanceContract.getFeeConfig();
+        platformFee = (listing.price * feeBps) / 10000;
+        sellerProceeds = listing.price - royaltyAmount - platformFee;
+
+        return (listing.price, royaltyAmount, royaltyRecipient, platformFee, recipient, sellerProceeds);
     }
 }

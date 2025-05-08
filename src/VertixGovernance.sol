@@ -76,7 +76,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     function setPlatformFee(uint16 newFee) external onlyOwner {
         if (newFee > MAX_FEE_BPS) revert InvalidFee();
         if (newFee == _feeConfig.feeBps) revert SameValue();
-        
+
         _feeConfig.feeBps = newFee;
         emit PlatformFeeUpdated(newFee);
     }
@@ -88,7 +88,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     function setFeeRecipient(address newRecipient) external onlyOwner {
         if (newRecipient == address(0)) revert ZeroAddress();
         if (newRecipient == _feeConfig.feeRecipient) revert SameValue();
-        
+
         _feeConfig.feeRecipient = newRecipient;
         emit FeeRecipientUpdated(newRecipient);
     }
@@ -100,7 +100,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     function setMarketplace(address newMarketplace) external onlyOwner {
         if (newMarketplace == address(0)) revert ZeroAddress();
         if (newMarketplace == contracts.marketplace) revert SameValue();
-        
+
         contracts.marketplace = newMarketplace;
         emit MarketplaceUpdated(newMarketplace);
     }
@@ -112,7 +112,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     function setEscrow(address newEscrow) external onlyOwner {
         if (newEscrow == address(0)) revert ZeroAddress();
         if (newEscrow == contracts.escrow) revert SameValue();
-        
+
         contracts.escrow = newEscrow;
         emit EscrowUpdated(newEscrow);
     }
