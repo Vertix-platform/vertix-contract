@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.26;
 
 import {VertixUtils} from "../libraries/VertixUtils.sol";
 
@@ -53,11 +53,7 @@ interface IVertixMarketplace {
 
     // Events
     event NFTListed(
-        uint256 indexed listingId,
-        address indexed seller,
-        address nftContract,
-        uint256 tokenId,
-        uint256 price
+        uint256 indexed listingId, address indexed seller, address nftContract, uint256 tokenId, uint256 price
     );
     event NonNFTListed(
         uint256 indexed listingId,
@@ -75,5 +71,7 @@ interface IVertixMarketplace {
         uint256 platformFee,
         address feeRecipient
     );
-    event NonNFTBought(uint256 indexed listingId, address indexed buyer, uint256 price, uint256 platformFee, address feeRecipient);
+    event NonNFTBought(
+        uint256 indexed listingId, address indexed buyer, uint256 price, uint256 platformFee, address feeRecipient
+    );
 }

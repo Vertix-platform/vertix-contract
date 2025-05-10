@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.26;
 
 // Interface for the VertixNFT contract
 interface IVertixNFT {
@@ -15,20 +15,12 @@ interface IVertixNFT {
     }
 
     // Create a new collection
-    function createCollection(
-        string calldata name,
-        string calldata symbol,
-        string calldata image,
-        uint8 maxSupply
-    ) external returns (uint256);
+    function createCollection(string calldata name, string calldata symbol, string calldata image, uint8 maxSupply)
+        external
+        returns (uint256);
 
     // Mint an NFT to a collection
-    function mintToCollection(
-        address to,
-        uint256 collectionId,
-        string calldata uri,
-        bytes32 metadataHash
-    ) external;
+    function mintToCollection(address to, uint256 collectionId, string calldata uri, bytes32 metadataHash) external;
 
     // Mint a single NFT (no collection)
     function mintSingleNFT(address to, string calldata uri, bytes32 metadataHash) external;
@@ -68,17 +60,9 @@ interface IVertixNFT {
         uint256 maxSupply
     );
     event NFTMinted(
-        address indexed to,
-        uint256 indexed tokenId,
-        uint256 collectionId,
-        string uri,
-        bytes32 metadataHash
+        address indexed to, uint256 indexed tokenId, uint256 collectionId, string uri, bytes32 metadataHash
     );
     event SocialMediaNFTMinted(
-        address indexed to,
-        uint256 indexed tokenId,
-        string socialMediaId,
-        string uri,
-        bytes32 metadataHash
+        address indexed to, uint256 indexed tokenId, string socialMediaId, string uri, bytes32 metadataHash
     );
 }

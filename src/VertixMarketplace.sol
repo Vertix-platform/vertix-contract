@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.26;
 
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -64,11 +64,7 @@ contract VertixMarketplace is
 
     // Events
     event NFTListed(
-        uint256 indexed listingId,
-        address indexed seller,
-        address nftContract,
-        uint256 tokenId,
-        uint256 price
+        uint256 indexed listingId, address indexed seller, address nftContract, uint256 tokenId, uint256 price
     );
     event NonNFTListed(
         uint256 indexed listingId,
@@ -87,11 +83,7 @@ contract VertixMarketplace is
         address feeRecipient
     );
     event NonNFTBought(
-        uint256 indexed listingId,
-        address indexed buyer,
-        uint256 price,
-        uint256 platformFee,
-        address feeRecipient
+        uint256 indexed listingId, address indexed buyer, uint256 price, uint256 platformFee, address feeRecipient
     );
     event NFTListingCancelled(uint256 indexed listingId, address indexed seller);
     event NonNFTListingCancelled(uint256 indexed listingId, address indexed seller);
@@ -108,11 +100,10 @@ contract VertixMarketplace is
     }
 
     // Initialization
-    function initialize(
-        address _nftContract,
-        address _governanceContract,
-        address _escrowContract
-    ) public initializer {
+    function initialize(address _nftContract, address _governanceContract, address _escrowContract)
+        public
+        initializer
+    {
         __ReentrancyGuard_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
@@ -141,11 +132,7 @@ contract VertixMarketplace is
      * @param tokenId ID of the NFT
      * @param price Sale price in wei
      */
-    function listNFT(
-        address nftContractAddr,
-        uint256 tokenId,
-        uint256 price
-    ) external nonReentrant whenNotPaused {
+    function listNFT(address nftContractAddr, uint256 tokenId, uint256 price) external nonReentrant whenNotPaused {
         VertixUtils.validatePrice(price);
         if (nftContractAddr != address(nftContract)) revert VertixMarketplace__InvalidNFTContract();
         if (IERC721(nftContractAddr).ownerOf(tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
@@ -156,13 +143,8 @@ contract VertixMarketplace is
         IERC721(nftContractAddr).transferFrom(msg.sender, address(this), tokenId);
 
         uint256 listingId = _listingIdCounter++;
-        _nftListings[listingId] = NFTListing({
-            seller: msg.sender,
-            nftContract: nftContractAddr,
-            tokenId: tokenId,
-            price: price,
-            active: true
-        });
+        _nftListings[listingId] =
+            NFTListing({seller: msg.sender, nftContract: nftContractAddr, tokenId: tokenId, price: price, active: true});
         _listingHashes[listingHash] = true;
 
         emit NFTListed(listingId, msg.sender, nftContractAddr, tokenId, price);
@@ -213,10 +195,8 @@ contract VertixMarketplace is
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
 
         // Get royalty info
-        (address royaltyRecipient, uint256 royaltyAmount) = IERC2981(address(nftContract)).royaltyInfo(
-            listing.tokenId,
-            listing.price
-        );
+        (address royaltyRecipient, uint256 royaltyAmount) =
+            IERC2981(address(nftContract)).royaltyInfo(listing.tokenId, listing.price);
 
         // Get platform fee info
         (uint256 platformFeeBps, address feeRecipient) = governanceContract.getFeeConfig();
@@ -235,14 +215,14 @@ contract VertixMarketplace is
 
         // Transfer royalties, platform fee, and seller proceeds
         if (royaltyAmount > 0) {
-            (bool royaltySuccess, ) = payable(royaltyRecipient).call{value: royaltyAmount}("");
+            (bool royaltySuccess,) = payable(royaltyRecipient).call{value: royaltyAmount}("");
             if (!royaltySuccess) revert VertixMarketplace__TransferFailed();
         }
         if (platformFee > 0) {
-            (bool feeSuccess, ) = payable(feeRecipient).call{value: platformFee}("");
+            (bool feeSuccess,) = payable(feeRecipient).call{value: platformFee}("");
             if (!feeSuccess) revert VertixMarketplace__TransferFailed();
         }
-        (bool sellerSuccess, ) = payable(listing.seller).call{value: listing.price - totalDeduction}("");
+        (bool sellerSuccess,) = payable(listing.seller).call{value: listing.price - totalDeduction}("");
         if (!sellerSuccess) revert VertixMarketplace__TransferFailed();
 
         // Refund excess payment
@@ -255,7 +235,13 @@ contract VertixMarketplace is
      * @dev Buy a non-NFT asset listing, paying platform fee
      * @param listingId ID of the listing to purchase
      */
-    function buyNonNFTAsset(uint256 listingId) external payable nonReentrant whenNotPaused onlyValidNonNFTListing(listingId) {
+    function buyNonNFTAsset(uint256 listingId)
+        external
+        payable
+        nonReentrant
+        whenNotPaused
+        onlyValidNonNFTListing(listingId)
+    {
         NonNFTListing memory listing = _nonNFTListings[listingId];
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
 
@@ -272,19 +258,15 @@ contract VertixMarketplace is
 
         // Transfer platform fee
         if (platformFee > 0) {
-            (bool feeSuccess, ) = payable(feeRecipient).call{value: platformFee}("");
+            (bool feeSuccess,) = payable(feeRecipient).call{value: platformFee}("");
             if (!feeSuccess) revert VertixMarketplace__TransferFailed();
         }
 
         // Transfer remaining funds to escrow
         uint256 escrowAmount = listing.price - platformFee;
-        (bool success, ) = escrowContract.call{value: escrowAmount}(
+        (bool success,) = escrowContract.call{value: escrowAmount}(
             abi.encodeWithSignature(
-                "lockFunds(uint256,address,address,uint256)",
-                listingId,
-                listing.seller,
-                msg.sender,
-                escrowAmount
+                "lockFunds(uint256,address,address,uint256)", listingId, listing.seller, msg.sender, escrowAmount
             )
         );
         if (!success) revert VertixMarketplace__TransferFailed();
@@ -332,7 +314,7 @@ contract VertixMarketplace is
      */
     function _refundExcessPayment(uint256 paidAmount, uint256 requiredAmount) internal {
         if (paidAmount > requiredAmount) {
-            (bool success, ) = msg.sender.call{value: paidAmount - requiredAmount}("");
+            (bool success,) = msg.sender.call{value: paidAmount - requiredAmount}("");
             if (!success) revert VertixMarketplace__TransferFailed();
         }
     }
@@ -366,10 +348,10 @@ contract VertixMarketplace is
         uint256[] memory listingIds = new uint256[](tokenIds.length);
         uint256 count = 0;
 
-        for (uint i = 0; i < tokenIds.length; i++) {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
             bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
             if (_listingHashes[listingHash]) {
-                for (uint j = 1; j < _listingIdCounter; j++) {
+                for (uint256 j = 1; j < _listingIdCounter; j++) {
                     if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
                         listingIds[count] = j;
                         count++;
@@ -380,7 +362,7 @@ contract VertixMarketplace is
         }
 
         uint256[] memory result = new uint256[](count);
-        for (uint i = 0; i < count; i++) {
+        for (uint256 i = 0; i < count; i++) {
             result[i] = listingIds[i];
         }
         return result;
@@ -390,11 +372,11 @@ contract VertixMarketplace is
         uint256[] memory listingIds = new uint256[](0);
         uint256 count = 0;
 
-        for (uint i = 1; i < _listingIdCounter; i++) {
+        for (uint256 i = 1; i < _listingIdCounter; i++) {
             if (_nftListings[i].active && _nftListings[i].price >= minPrice && _nftListings[i].price <= maxPrice) {
                 // Manually resize the array
                 uint256[] memory newListingIds = new uint256[](count + 1);
-                for (uint j = 0; j < count; j++) {
+                for (uint256 j = 0; j < count; j++) {
                     newListingIds[j] = listingIds[j];
                 }
                 newListingIds[count] = i;
@@ -410,11 +392,11 @@ contract VertixMarketplace is
         uint256[] memory listingIds = new uint256[](0);
         uint256 count = 0;
 
-        for (uint i = 1; i < _listingIdCounter; i++) {
+        for (uint256 i = 1; i < _listingIdCounter; i++) {
             if (_nonNFTListings[i].active && _nonNFTListings[i].assetType == assetType) {
                 // Manually resize the array
                 uint256[] memory newListingIds = new uint256[](count + 1);
-                for (uint j = 0; j < count; j++) {
+                for (uint256 j = 0; j < count; j++) {
                     newListingIds[j] = listingIds[j];
                 }
                 newListingIds[count] = i;
@@ -426,16 +408,20 @@ contract VertixMarketplace is
         return listingIds;
     }
 
-    function getPurchaseDetails(uint256 listingId) external view returns (
-        uint256 price,
-        uint256 royaltyAmount,
-        address royaltyRecipient,
-        uint256 platformFee,
-        address feeRecipient,
-        uint256 sellerProceeds
-    ) {
+    function getPurchaseDetails(uint256 listingId)
+        external
+        view
+        returns (
+            uint256 price,
+            uint256 royaltyAmount,
+            address royaltyRecipient,
+            uint256 platformFee,
+            address feeRecipient,
+            uint256 sellerProceeds
+        )
+    {
         NFTListing memory listing = _nftListings[listingId];
-        if(!listing.active) revert VertixMarketplace__InvalidListing();
+        if (!listing.active) revert VertixMarketplace__InvalidListing();
 
         (royaltyRecipient, royaltyAmount) = IERC2981(address(nftContract)).royaltyInfo(listing.tokenId, listing.price);
         (uint16 feeBps, address recipient) = governanceContract.getFeeConfig();
