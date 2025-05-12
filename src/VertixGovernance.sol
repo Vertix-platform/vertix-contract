@@ -55,7 +55,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
 
-        if (_marketplace == address(0) || _escrow == address(0) || _feeRecipient == address(0)) {
+        if (_escrow == address(0) || _feeRecipient == address(0)) {
             revert ZeroAddress();
         }
 
