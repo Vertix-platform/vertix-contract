@@ -8,8 +8,8 @@ pragma solidity ^0.8.20;
 interface IVertixGovernance {
     // Structs
     struct FeeConfig {
-        uint16 feeBps;          // Platform fee in basis points (1% = 100)
-        address feeRecipient;   // Address receiving fees
+        uint16 feeBps; // Platform fee in basis points (1% = 100)
+        address feeRecipient; // Address receiving fees
     }
 
     struct ContractAddresses {
@@ -24,11 +24,7 @@ interface IVertixGovernance {
     event EscrowUpdated(address newEscrow);
 
     // External functions
-    function initialize(
-        address _marketplace,
-        address _escrow,
-        address _feeRecipient
-    ) external;
+    function initialize(address _marketplace, address _escrow, address _feeRecipient) external;
 
     function setPlatformFee(uint16 newFee) external;
 

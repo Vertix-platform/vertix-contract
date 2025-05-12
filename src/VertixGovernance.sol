@@ -13,8 +13,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // Type declarations
     struct FeeConfig {
-        uint16 feeBps;          // Platform fee in basis points (1% = 100)
-        address feeRecipient;   // Address receiving fees
+        uint16 feeBps; // Platform fee in basis points (1% = 100)
+        address feeRecipient; // Address receiving fees
     }
 
     struct ContractAddresses {
@@ -47,11 +47,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     }
 
     // Initialization
-    function initialize(
-        address _marketplace,
-        address _escrow,
-        address _feeRecipient
-    ) public initializer {
+    function initialize(address _marketplace, address _escrow, address _feeRecipient) public initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
 

@@ -35,9 +35,7 @@ contract DeployVertix is Script {
 
         // Deploy VertixEscrow
         addresses.escrow = deployProxy(
-            address(new VertixEscrow()),
-            abi.encodeWithSelector(VertixEscrow.initialize.selector),
-            "VertixEscrow"
+            address(new VertixEscrow()), abi.encodeWithSelector(VertixEscrow.initialize.selector), "VertixEscrow"
         );
 
         // Deploy VertixGovernance
@@ -56,10 +54,7 @@ contract DeployVertix is Script {
         addresses.marketplace = deployProxy(
             address(new VertixMarketplace()),
             abi.encodeWithSelector(
-                VertixMarketplace.initialize.selector,
-                addresses.nft,
-                addresses.governance,
-                addresses.escrow
+                VertixMarketplace.initialize.selector, addresses.nft, addresses.governance, addresses.escrow
             ),
             "VertixMarketplace"
         );
