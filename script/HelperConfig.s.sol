@@ -32,9 +32,9 @@ contract HelperConfig is Script {
         } else if (block.chainid == 8453) {
             // Base Mainnet
             activeNetworkConfig = getBaseMainnetConfig();
-        } else if (block.chainid == 84531) {
-            // Base Goerli Testnet
-            activeNetworkConfig = getBaseGoerliConfig();
+        } else if (block.chainid == 84532) {
+            // Base Sepolia Testnet
+            activeNetworkConfig = getBaseSepoliaConfig();
         } else if (block.chainid == 11155111) {
             // Sepolia Testnet
             activeNetworkConfig = getSepoliaConfig();
@@ -94,7 +94,7 @@ contract HelperConfig is Script {
         });
     }
 
-    function getBaseGoerliConfig() public view returns (NetworkConfig memory) {
+    function getBaseSepoliaConfig() public view returns (NetworkConfig memory) {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         if (deployerKey == 0) {
             revert HelperConfig__PrivateKeyNotSet();
