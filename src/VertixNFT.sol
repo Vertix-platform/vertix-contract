@@ -3,7 +3,8 @@ pragma solidity ^0.8.20;
 
 // Imports
 import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
-import {ERC721URIStorageUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+import {ERC721URIStorageUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
 import {ERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/token/common/ERC2981Upgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -81,7 +82,7 @@ contract VertixNFT is
         string socialMediaId,
         string uri,
         bytes32 metadataHash,
-        address royaltyRecipient,
+        address indexed royaltyRecipient,
         uint96 royaltyBps
     );
 
@@ -108,12 +109,10 @@ contract VertixNFT is
      * @param image Collection image URI
      * @param maxSupply Maximum NFTs in collection
      */
-    function createCollection(
-        string calldata name,
-        string calldata symbol,
-        string calldata image,
-        uint8 maxSupply
-    ) external returns (uint256) {
+    function createCollection(string calldata name, string calldata symbol, string calldata image, uint8 maxSupply)
+        external
+        returns (uint256)
+    {
         if (bytes(name).length == 0) revert VertixNFT__EmptyString();
         if (bytes(symbol).length == 0) revert VertixNFT__EmptyString();
         if (maxSupply == 0) revert VertixNFT__ZeroSupply();

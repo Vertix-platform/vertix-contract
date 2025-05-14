@@ -85,11 +85,7 @@ contract VertixEscrow is
      * @param seller The address of the seller
      * @param buyer The address of the buyer
      */
-    function lockFunds(
-        uint256 listingId,
-        address seller,
-        address buyer
-    ) external payable nonReentrant whenNotPaused {
+    function lockFunds(uint256 listingId, address seller, address buyer) external payable nonReentrant whenNotPaused {
         if (msg.value == 0 || msg.value > type(uint96).max) revert VertixEscrow__IncorrectAmountSent();
         if (escrows[listingId].seller != address(0)) revert VertixEscrow__EscrowAlreadyExists();
 
@@ -120,7 +116,7 @@ contract VertixEscrow is
         uint256 amount = escrow.amount;
         delete escrows[listingId];
 
-        (bool success, ) = escrow.seller.call{value: amount}("");
+        (bool success,) = escrow.seller.call{value: amount}("");
         require(success, "Transfer failed");
 
         emit FundsReleased(listingId, escrow.seller, amount);
@@ -154,7 +150,7 @@ contract VertixEscrow is
         uint256 amount = escrow.amount;
         delete escrows[listingId];
 
-        (bool success, ) = winner.call{value: amount}("");
+        (bool success,) = winner.call{value: amount}("");
         require(success, "Transfer failed");
 
         emit FundsReleased(listingId, winner, amount);
@@ -175,7 +171,7 @@ contract VertixEscrow is
         uint256 amount = escrow.amount;
         delete escrows[listingId];
 
-        (bool success, ) = escrow.buyer.call{value: amount}("");
+        (bool success,) = escrow.buyer.call{value: amount}("");
         require(success, "Transfer failed");
 
         emit FundsReleased(listingId, escrow.buyer, amount);

@@ -53,11 +53,7 @@ interface IVertixMarketplace {
 
     // Events
     event NFTListed(
-        uint256 indexed listingId,
-        address indexed seller,
-        address nftContract,
-        uint256 tokenId,
-        uint256 price
+        uint256 indexed listingId, address indexed seller, address nftContract, uint256 tokenId, uint256 price
     );
     event NonNFTListed(
         uint256 indexed listingId,
@@ -75,5 +71,7 @@ interface IVertixMarketplace {
         uint256 platformFee,
         address feeRecipient
     );
-    event NonNFTBought(uint256 indexed listingId, address indexed buyer, uint256 price, uint256 platformFee, address feeRecipient);
+    event NonNFTBought(
+        uint256 indexed listingId, address indexed buyer, uint256 price, uint256 platformFee, address feeRecipient
+    );
 }
