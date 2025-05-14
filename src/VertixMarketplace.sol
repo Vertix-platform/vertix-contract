@@ -124,7 +124,7 @@ contract VertixMarketplace is
 
         VertixUtils.validatePrice(_price);
 
-        if (_listedForAuction[_tokenId] = true) revert VertixMarketplace__AlreadyListedForAuction();
+        if (_listedForAuction[_tokenId]) revert VertixMarketplace__AlreadyListedForAuction();
 
         uint256 _auctionId = _auctionIdCounter++;
 
@@ -145,6 +145,8 @@ contract VertixMarketplace is
         IVertixNFT(_nftContract).transferFrom(msg.sender, address(this), _tokenId);
         emit NFTAuctionStarted(_auctionId, msg.sender, _duration, _price, _nftContract, _tokenId);
     }
+
+    // function placeBidForAuction(uint256 auctionId, uint256 )
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -514,4 +516,35 @@ contract VertixMarketplace is
 
         return (listing.price, royaltyAmount, royaltyRecipient, platformFee, recipient, sellerProceeds);
     }
+
+    // Getter for _listedForAuction mapping
+    /**
+     * @dev Returns whether a token is listed for auction
+     * @param tokenId The ID of the NFT
+     * @return bool True if the token is listed for auction, false otherwise
+     */
+    function isListedForAuction(uint256 tokenId) external view returns (bool) {
+        return _listedForAuction[tokenId];
+    }
+
+    // Getter for _auctionIdForToken mapping
+    /**
+     * @dev Returns the auction ID associated with a token
+     * @param tokenId The ID of the NFT
+     * @return uint256 The auction ID for the token, or 0 if not listed
+     */
+    function getAuctionIdForToken(uint256 tokenId) external view returns (uint256) {
+        return _auctionIdForToken[tokenId];
+    }
+
+    // Getter for _auctionListings mapping
+    /**
+     * @dev Returns the details of an auction
+     * @param auctionId The ID of the auction
+     * @return AuctionDetails The auction details struct
+     */
+    function getAuctionDetails(uint256 auctionId) external view returns (AuctionDetails memory) {
+        return _auctionListings[auctionId];
+    }
+    
 }
