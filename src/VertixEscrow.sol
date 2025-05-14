@@ -178,7 +178,7 @@ contract VertixEscrow is
     }
 
     /*//////////////////////////////////////////////////////////////
-                    VIEW FUNCTIONS
+                            VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     /**
      * @dev Get escrow details

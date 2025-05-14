@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+
 // Interface for the VertixNFT contract
-interface IVertixNFT {
+interface IVertixNFT is IERC721 {
     // Struct for collection details
     struct Collection {
         address creator;
