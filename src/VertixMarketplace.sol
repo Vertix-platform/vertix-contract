@@ -45,7 +45,7 @@ contract VertixMarketplace is
     error VertixMarketplace__AuctionBidTooLow(uint256 bidAmount);
     error VertixMarketplace__AuctionInactive();
     error VertixMarketplace__ContractInsufficientBalance();
-    error VertixMarketplace__AuctionOngoing();
+    error VertixMarketplace__AuctionOngoing(uint256 timestamp);
     error VertixMarketplace__FeeTransferFailed();
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -80,6 +80,7 @@ contract VertixMarketplace is
     event NFTAuctionStarted(
         uint256 indexed auctionId,
         address indexed seller,
+        uint256 startTime,
         uint24 duration,
         uint256 price,
         address nftContract,
@@ -135,115 +136,6 @@ contract VertixMarketplace is
         IVertixNFT nftContract;
     }
 
-    /// @notice starts an auction for a vertix NFT, which is only callable by the owner
-    /// @param _nftContract the contract address of the vertix NFT being auctioned
-    /// @param _tokenId the tokenId of the vertix NFT being auctioned
-    /// @param _duration the duration of the auction (in seconds)
-    /// @param _price minimum price being accepted for the auction
-    function startNFTAuction(address _nftContract, uint256 _tokenId, uint24 _duration, uint256 _price) external {
-        if (IVertixNFT(_nftContract) != nftContract) revert VertixMarketplace__InvalidNFTContract();
-        if (IVertixNFT(_nftContract).ownerOf(_tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
-        if (_duration < MIN_AUCTION_DURATION || _duration > MAX_AUCTION_DURATION) {
-            revert VertixMarketplace__IncorrectDuration(_duration);
-        }
-
-        VertixUtils.validatePrice(_price);
-
-        if (_listedForAuction[_tokenId]) revert VertixMarketplace__AlreadyListedForAuction();
-
-        uint256 _auctionId = _auctionIdCounter++;
-
-        _listedForAuction[_tokenId] = true;
-        _auctionIdForToken[_tokenId] = _auctionId;
-        _tokenIdForAuction[_auctionId] = _tokenId;
-
-        _auctionListings[_auctionId] = AuctionDetails({
-            active: true,
-            duration: _duration,
-            startTime: block.timestamp,
-            seller: msg.sender,
-            highestBidder: address(0),
-            highestBid: 0,
-            nftContract: IVertixNFT(_nftContract),
-            tokenId: _tokenId,
-            auctionId: _auctionId,
-            startingPrice: _price
-        });
-
-        IVertixNFT(_nftContract).transferFrom(msg.sender, address(this), _tokenId);
-        emit NFTAuctionStarted(_auctionId, msg.sender, _duration, _price, _nftContract, _tokenId);
-    }
-
-    function placeBidForAuction(uint256 _auctionId) external payable nonReentrant {
-        AuctionDetails storage details = _auctionListings[_auctionId];
-
-        if (!details.active) revert VertixMarketplace__AuctionInactive();
-        if (block.timestamp > details.startTime + details.duration) revert VertixMarketplace__AuctionExpired();
-
-        (uint256 platformFeeBps,) = governanceContract.getFeeConfig();
-
-        uint256 platformFee = (details.startingPrice * platformFeeBps) / 10000;
-
-        if (msg.value < details.startingPrice || msg.value <= details.highestBid || msg.value < platformFee) {
-            revert VertixMarketplace__AuctionBidTooLow(msg.value);
-        }
-
-        if (details.highestBid > 0) {
-            if (address(this).balance - msg.value < details.highestBid) {
-                revert VertixMarketplace__ContractInsufficientBalance();
-            }
-            (bool success,) = payable(details.highestBidder).call{value: details.highestBid}("");
-            if (!success) revert VertixMarketplace__TransferFailed();
-        }
-
-        uint256 bidId = _bidsPlaced[_auctionId].length;
-
-        // store placed bid for auctionId
-        Bid memory newBid = Bid({auctionId: _auctionId, bidAmount: msg.value, bidId: bidId, bidder: msg.sender});
-        _bidsPlaced[_auctionId].push(newBid);
-
-        // update highest bid and highest bidder
-        details.highestBid = msg.value;
-        details.highestBidder = msg.sender;
-
-        emit BidPlaced(_auctionId, bidId, msg.sender, msg.value, details.tokenId);
-    }
-
-    function endAuction(uint256 _auctionId) external nonReentrant {
-        AuctionDetails storage details = _auctionListings[_auctionId];
-        if (details.seller != msg.sender) revert VertixMarketplace__NotSeller();
-        if (!details.active) revert VertixMarketplace__AuctionInactive();
-        if (block.timestamp < block.timestamp + details.duration) revert VertixMarketplace__AuctionOngoing();
-
-        address highestBidder = details.highestBidder;
-        uint256 highestBid = details.highestBid;
-        uint256 tokenID = details.tokenId;
-
-        if (highestBid > 0) {
-            (uint256 platformFeeBps, address feeRecipient) = governanceContract.getFeeConfig();
-
-            uint256 platformFee = (highestBid * platformFeeBps) / 10000;
-
-            if (platformFee > 0) {
-                (bool feeSuccess,) = payable(feeRecipient).call{value: platformFee}("");
-                if (!feeSuccess) revert VertixMarketplace__FeeTransferFailed();
-            }
-
-            //  transfer remainder of sales to seller and NFT to highest bidder
-            (bool sellerSuccess,) = payable(details.seller).call{value: details.highestBid - platformFee}("");
-            if (!sellerSuccess) revert VertixMarketplace__TransferFailed();
-
-            details.nftContract.transferFrom(address(this), highestBidder, tokenID);
-        } else {
-            // if no bid we transfer back the nft to seller
-            details.nftContract.transferFrom(address(this), details.seller, details.tokenId);
-        }
-
-        _listedForAuction[_auctionId] = false;
-        details.active = false;
-        emit AuctionEnded(_auctionId, details.seller, highestBidder, highestBid, tokenID);
-    }
-
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -297,9 +189,6 @@ contract VertixMarketplace is
         _auctionIdCounter = 1;
     }
 
-    // Upgrade authorization
-    function _authorizeUpgrade(address) internal override onlyOwner {}
-
     function pause() external onlyOwner {
         _pause();
     }
@@ -308,7 +197,6 @@ contract VertixMarketplace is
         _unpause();
     }
 
-    // Public functions
     /**
      * @dev List an NFT for sale
      * @param nftContractAddr Address of NFT contract
@@ -489,7 +377,132 @@ contract VertixMarketplace is
         emit NonNFTListingCancelled(listingId, listing.seller);
     }
 
-    // Internal functions
+    /**
+     * @notice starts an auction for a vertix NFT, which is only callable by the owner
+     * @param _nftContract the contract address of the vertix NFT being auctioned
+     * @param _tokenId the tokenId of the vertix NFT being auctioned
+     * @param _duration the duration of the auction (in seconds)
+     * @param _price minimum price being accepted for the auction
+     */
+    function startNFTAuction(address _nftContract, uint256 _tokenId, uint24 _duration, uint256 _price) external {
+        if (IVertixNFT(_nftContract) != nftContract) revert VertixMarketplace__InvalidNFTContract();
+        if (IVertixNFT(_nftContract).ownerOf(_tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
+        if (_duration < MIN_AUCTION_DURATION || _duration > MAX_AUCTION_DURATION) {
+            revert VertixMarketplace__IncorrectDuration(_duration);
+        }
+
+        VertixUtils.validatePrice(_price);
+
+        if (_listedForAuction[_tokenId]) revert VertixMarketplace__AlreadyListedForAuction();
+
+        uint256 _auctionId = _auctionIdCounter++;
+
+        _listedForAuction[_tokenId] = true;
+        _auctionIdForToken[_tokenId] = _auctionId;
+        _tokenIdForAuction[_auctionId] = _tokenId;
+
+        _auctionListings[_auctionId] = AuctionDetails({
+            active: true,
+            duration: _duration,
+            startTime: block.timestamp,
+            seller: msg.sender,
+            highestBidder: address(0),
+            highestBid: 0,
+            nftContract: IVertixNFT(_nftContract),
+            tokenId: _tokenId,
+            auctionId: _auctionId,
+            startingPrice: _price
+        });
+
+        IVertixNFT(_nftContract).transferFrom(msg.sender, address(this), _tokenId);
+        emit NFTAuctionStarted(_auctionId, msg.sender, block.timestamp, _duration, _price, _nftContract, _tokenId);
+    }
+
+    /**
+     * @notice Place a bid on an active NFT auction
+     * @dev Checks auction validity, minimum bid requirements, and handles bid replacement
+     * @param _auctionId The ID of the auction to bid on
+     */
+    function placeBidForAuction(uint256 _auctionId) external payable nonReentrant {
+        AuctionDetails storage details = _auctionListings[_auctionId];
+
+        if (!details.active) revert VertixMarketplace__AuctionInactive();
+        if (block.timestamp > details.startTime + details.duration) revert VertixMarketplace__AuctionExpired();
+
+        (uint256 platformFeeBps,) = governanceContract.getFeeConfig();
+
+        uint256 platformFee = (details.startingPrice * platformFeeBps) / 10000;
+
+        if (msg.value < details.startingPrice || msg.value <= details.highestBid || msg.value < platformFee) {
+            revert VertixMarketplace__AuctionBidTooLow(msg.value);
+        }
+
+        if (details.highestBid > 0) {
+            if (address(this).balance - msg.value < details.highestBid) {
+                revert VertixMarketplace__ContractInsufficientBalance();
+            }
+            (bool success,) = payable(details.highestBidder).call{value: details.highestBid}("");
+            if (!success) revert VertixMarketplace__TransferFailed();
+        }
+
+        uint256 bidId = _bidsPlaced[_auctionId].length;
+
+        // store placed bid for auctionId
+        Bid memory newBid = Bid({auctionId: _auctionId, bidAmount: msg.value, bidId: bidId, bidder: msg.sender});
+        _bidsPlaced[_auctionId].push(newBid);
+
+        // update highest bid and highest bidder
+        details.highestBid = msg.value;
+        details.highestBidder = msg.sender;
+
+        emit BidPlaced(_auctionId, bidId, msg.sender, msg.value, details.tokenId);
+    }
+
+    /**
+     * @notice End an NFT auction after its duration has expired
+     * @dev Distributes funds and NFT based on auction outcome
+     * @param _auctionId The ID of the auction to end
+     */
+    function endAuction(uint256 _auctionId) external nonReentrant {
+        AuctionDetails storage details = _auctionListings[_auctionId];
+        if (details.seller != msg.sender) revert VertixMarketplace__NotSeller();
+        if (!details.active) revert VertixMarketplace__AuctionInactive();
+        if (block.timestamp < details.startTime + details.duration) {
+            revert VertixMarketplace__AuctionOngoing(block.timestamp);
+        }
+
+        address highestBidder = details.highestBidder;
+        uint256 highestBid = details.highestBid;
+        uint256 tokenID = details.tokenId;
+
+        if (highestBid > 0) {
+            (uint256 platformFeeBps, address feeRecipient) = governanceContract.getFeeConfig();
+
+            uint256 platformFee = (highestBid * platformFeeBps) / 10000;
+
+            if (platformFee > 0) {
+                (bool feeSuccess,) = payable(feeRecipient).call{value: platformFee}("");
+                if (!feeSuccess) revert VertixMarketplace__FeeTransferFailed();
+            }
+
+            //  transfer remainder of sales to seller and NFT to highest bidder
+            (bool sellerSuccess,) = payable(details.seller).call{value: details.highestBid - platformFee}("");
+            if (!sellerSuccess) revert VertixMarketplace__TransferFailed();
+
+            details.nftContract.transferFrom(address(this), highestBidder, tokenID);
+        } else {
+            // if no bid we transfer back the nft to seller
+            details.nftContract.transferFrom(address(this), details.seller, details.tokenId);
+        }
+
+        _listedForAuction[_auctionId] = false;
+        details.active = false;
+        emit AuctionEnded(_auctionId, details.seller, highestBidder, highestBid, tokenID);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      PRIVATE & INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
     /**
      * @dev Refund excess payment to buyer
      * @param paidAmount Amount sent by buyer
@@ -501,6 +514,9 @@ contract VertixMarketplace is
             if (!success) revert VertixMarketplace__TransferFailed();
         }
     }
+
+    // Upgrade authorization
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     // View functions
     /**
@@ -671,7 +687,6 @@ contract VertixMarketplace is
         return _bidsPlaced[_auctionId].length;
     }
 
-    // Getter for _auctionListings mapping
     /**
      * @dev Returns the details of an auction
      * @param auctionId The ID of the auction
@@ -683,7 +698,8 @@ contract VertixMarketplace is
 
     // @inherit-doc
     function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data)
-        public
+        external
+        pure
         returns (bytes4)
     {
         return this.onERC721Received.selector;

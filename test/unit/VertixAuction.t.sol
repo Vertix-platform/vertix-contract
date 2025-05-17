@@ -1,31 +1,30 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test, console} from "forge-std/Test.sol";
-import {VertixMarketplace} from "../src/VertixMarketplace.sol";
-import {IVertixNFT} from "../src/interfaces/IVertixNFT.sol";
+import {Test, console2, console} from "forge-std/Test.sol";
+import {VertixMarketplace} from "../../src/VertixMarketplace.sol";
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {}
+import {MockVertixNFT} from "../../test/mocks/MockVertixNFT.sol";
+import {MockVertixGovernance} from "../../test/mocks/MockVertixGovernance.sol";
 
-// Mock VertixNFT contract for testing
-contract MockVertixNFT is ERC721 {
-    constructor() ERC721("VertixNFT", "VNFT") {}
-
-    function mint(address to, uint256 tokenId) external {
-        _mint(to, tokenId);
+// Helper contract to simulate failed Ether transfers
+contract EtherRejecter {
+    receive() external payable {
+        revert("Ether transfer rejected");
     }
 }
 
 contract VertixMarketplaceAuctionTest is Test {
     VertixMarketplace marketplace;
     MockVertixNFT nftContract;
+    MockVertixGovernance governanceContract;
 
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
     address user3 = makeAddr("user3");
     address escrowContract = makeAddr("escrow");
-    address governanceContract = makeAddr("governanceContract");
+    address feeRecipient = makeAddr("feeRecipient");
 
     address INVALID_NFT = makeAddr("invalidNft");
 
@@ -37,12 +36,14 @@ contract VertixMarketplaceAuctionTest is Test {
     event NFTAuctionStarted(
         uint256 indexed auctionId,
         address indexed seller,
+        uint256 startTime,
         uint24 duration,
         uint256 price,
         address nftContract,
         uint256 tokenId
     );
 
+    // Helper fucntion for starting auctions
     function startAuction(address seller, uint256 tokenId, uint24 duration, uint256 price) internal {
         vm.prank(seller);
         marketplace.startNFTAuction(address(nftContract), tokenId, duration, price);
@@ -51,10 +52,12 @@ contract VertixMarketplaceAuctionTest is Test {
     function setUp() public {
         // Deploy mock contracts
         nftContract = new MockVertixNFT();
-        governanceContract = new Go
 
         // Deploy and initialize marketplace
         marketplace = new VertixMarketplace();
+
+        governanceContract = new MockVertixGovernance(feeRecipient, address(marketplace), escrowContract);
+
         marketplace.initialize(address(nftContract), address(governanceContract), escrowContract);
 
         // Mint an NFT to user1
@@ -71,7 +74,7 @@ contract VertixMarketplaceAuctionTest is Test {
         uint24 duration = 1 days;
         vm.startPrank(user1);
         vm.expectEmit(true, true, true, true);
-        emit NFTAuctionStarted(1, user1, duration, VALID_PRICE, address(nftContract), TOKEN_ID);
+        emit NFTAuctionStarted(1, user1, block.timestamp, duration, VALID_PRICE, address(nftContract), TOKEN_ID);
 
         // Verify ownership before starting auction
         assertEq(nftContract.ownerOf(TOKEN_ID), user1, "user1 should own the NFT");
@@ -139,9 +142,6 @@ contract VertixMarketplaceAuctionTest is Test {
         // Start first auction
         vm.prank(user1);
         marketplace.startNFTAuction(address(nftContract), TOKEN_ID, 1 days, VALID_PRICE);
-
-        // Try to start another auction for the same token
-        address newOwner = nftContract.ownerOf(TOKEN_ID);
 
         // call with marketplace contract since its the new owner
         vm.prank(address(marketplace));
@@ -348,5 +348,197 @@ contract VertixMarketplaceAuctionTest is Test {
         // Try to access an invalid index
         vm.expectRevert();
         marketplace.getSingleBidForAuction(1, 1);
+    }
+
+    // Test successful auction end with bids
+    function testEndAuctionWithBidsSuccess() public {
+        // Start auction
+        startAuction(user1, TOKEN_ID, 1 days, VALID_PRICE);
+        console.log("duration of auction is: ", marketplace.getAuctionDetails(1).duration);
+
+        // Place bids
+        vm.deal(user2, 2 ether);
+        vm.deal(user3, 3 ether);
+        vm.prank(user2);
+        marketplace.placeBidForAuction{value: 1.5 ether}(1);
+        vm.prank(user3);
+        marketplace.placeBidForAuction{value: 2 ether}(1);
+
+        // Verify contract balance after bids
+        assertEq(address(marketplace).balance, 2 ether, "Contract should hold 2 ether after bids");
+
+        // Warp to after auction duration
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Get fee config
+        (uint16 feeBps, address feeRecipient_) = governanceContract.getFeeConfig();
+
+        uint256 platformFee = (2 ether * uint256(feeBps)) / 10_000;
+
+        uint256 sellerProceeds = 2 ether - platformFee;
+
+        // Record balances before
+        uint256 feeRecipientBalanceBefore = feeRecipient_.balance;
+        uint256 sellerBalanceBefore = user1.balance;
+
+        // End auction
+        vm.prank(user1);
+        marketplace.endAuction(1);
+
+        // Verify NFT ownership
+        assertEq(nftContract.ownerOf(TOKEN_ID), user3, "NFT should be owned by user3");
+
+        // Verify balances
+        assertEq(
+            feeRecipient_.balance, feeRecipientBalanceBefore + platformFee, "Fee recipient should receive platform fee"
+        );
+        assertEq(user1.balance, sellerBalanceBefore + sellerProceeds, "Seller should receive proceeds");
+
+        // Verify auction state
+        VertixMarketplace.AuctionDetails memory details = marketplace.getAuctionDetails(1);
+        assertFalse(details.active, "Auction should be inactive");
+        assertFalse(marketplace.isListedForAuction(TOKEN_ID), "Token should not be listed for auction");
+        assertEq(marketplace.getTokenIdForAuction(1), TOKEN_ID, "Token ID for auction should remain");
+
+        // Verify contract balance
+        assertEq(address(marketplace).balance, 0, "Contract should have no balance");
+    }
+
+    // Test successful auction end with no bids
+    function testEndAuctionNoBidsSuccess() public {
+        // Start auction
+        startAuction(user1, TOKEN_ID, 1 days, VALID_PRICE);
+
+        // Warp to after auction duration
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // End auction
+        vm.prank(user1);
+        marketplace.endAuction(1);
+
+        // Verify NFT ownership
+        assertEq(nftContract.ownerOf(TOKEN_ID), user1, "NFT should be returned to seller");
+
+        // Verify auction state
+        VertixMarketplace.AuctionDetails memory details = marketplace.getAuctionDetails(1);
+        assertFalse(details.active, "Auction should be inactive");
+        assertFalse(marketplace.isListedForAuction(TOKEN_ID), "Token should not be listed for auction");
+
+        // Verify contract balance
+        assertEq(address(marketplace).balance, 0, "Contract should have no balance");
+    }
+
+    // Test revert if caller is not seller
+    function testEndAuctionNotSeller() public {
+        // Start auction
+        startAuction(user1, TOKEN_ID, 1 days, VALID_PRICE);
+
+        // Warp to after auction duration
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Try to end auction as non-seller
+        vm.prank(user2);
+        vm.expectRevert(VertixMarketplace.VertixMarketplace__NotSeller.selector);
+        marketplace.endAuction(1);
+    }
+
+    // Test revert if auction is inactive
+    function testEndAuctionInactive() public {
+        // Start and end auction
+        startAuction(user1, TOKEN_ID, 1 days, VALID_PRICE);
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(user1);
+        marketplace.endAuction(1);
+
+        // Try to end again
+        vm.prank(user1);
+        vm.expectRevert(VertixMarketplace.VertixMarketplace__AuctionInactive.selector);
+        marketplace.endAuction(1);
+    }
+
+    // Test revert if auction is still ongoing
+    function testEndAuctionOngoing() public {
+        // Start auction
+        startAuction(user1, TOKEN_ID, 1 days, VALID_PRICE);
+
+        // Try to end before duration
+        vm.prank(user1);
+        uint256 timestamp = block.timestamp;
+        vm.expectRevert(abi.encodeWithSelector(VertixMarketplace.VertixMarketplace__AuctionOngoing.selector, timestamp));
+        marketplace.endAuction(1);
+    }
+
+    // Test revert if fee transfer fails
+    function testEndAuctionFeeTransferFailed() public {
+        // Start auction
+        startAuction(user1, TOKEN_ID, 1 days, VALID_PRICE);
+
+        // Place bid
+        vm.deal(user2, 2 ether);
+        vm.prank(user2);
+        marketplace.placeBidForAuction{value: 2 ether}(1);
+
+        // Set fee recipient to a contract that rejects Ether
+        address rejectingContract = address(new EtherRejecter());
+        vm.prank(address(governanceContract));
+        governanceContract.setFeeRecipient(rejectingContract);
+
+        // Warp to after auction duration
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Try to end auction
+        vm.prank(user1);
+        vm.expectRevert(VertixMarketplace.VertixMarketplace__FeeTransferFailed.selector);
+        marketplace.endAuction(1);
+    }
+
+    // Test revert if seller transfer fails
+    function testEndAuctionSellerTransferFailed() public {
+        // Start first auction (optional, to ensure consistent state)
+        startAuction(user1, TOKEN_ID, 1 days, VALID_PRICE);
+
+        // End first auction with no bids to return NFT to user1
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.prank(user1);
+        marketplace.endAuction(1);
+
+        // Verify NFT is back with user1
+        assertEq(nftContract.ownerOf(TOKEN_ID), user1, "NFT should be owned by user1");
+
+        // Deploy EtherRejecter contract
+        address rejectingContract = address(new EtherRejecter());
+
+        // Approve and transfer NFT to EtherRejecter
+        vm.prank(user1);
+        nftContract.approve(rejectingContract, TOKEN_ID);
+        vm.prank(user1);
+        nftContract.transferFrom(user1, rejectingContract, TOKEN_ID);
+
+        // Verify EtherRejecter owns the NFT
+        assertEq(nftContract.ownerOf(TOKEN_ID), rejectingContract, "NFT should be owned by EtherRejecter");
+
+        // Approve marketplace to transfer NFT from EtherRejecter
+        vm.prank(rejectingContract);
+        (bool success,) = address(nftContract).call(
+            abi.encodeWithSignature("approve(address,uint256)", address(marketplace), TOKEN_ID)
+        );
+        require(success, "Approval failed");
+
+        // Start new auction with EtherRejecter as seller
+        vm.prank(rejectingContract);
+        marketplace.startNFTAuction(address(nftContract), TOKEN_ID, 1 days, VALID_PRICE);
+
+        // Place bid for the new auction (ID 2)
+        vm.deal(user2, 2 ether);
+        vm.prank(user2);
+        marketplace.placeBidForAuction{value: 2 ether}(2);
+
+        // Warp to after auction duration
+        vm.warp(block.timestamp + 1 days + 1);
+
+        // Try to end auction, expect revert due to seller transfer failure
+        vm.prank(rejectingContract);
+        vm.expectRevert(VertixMarketplace.VertixMarketplace__TransferFailed.selector);
+        marketplace.endAuction(2);
     }
 }
