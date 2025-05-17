@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.26;
 
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -11,6 +11,7 @@ import {IVertixNFT} from "./interfaces/IVertixNFT.sol";
 import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 import {VertixUtils} from "./libraries/VertixUtils.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 /**
  * @title VertixMarketplace
@@ -21,11 +22,14 @@ contract VertixMarketplace is
     ReentrancyGuardUpgradeable,
     OwnableUpgradeable,
     UUPSUpgradeable,
-    PausableUpgradeable
+    PausableUpgradeable,
+    IERC721Receiver
 {
     using VertixUtils for *;
 
-    // Errors
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
     error VertixMarketplace__InvalidListing();
     error VertixMarketplace__NotOwner();
     error VertixMarketplace__InvalidAssetType();
@@ -35,37 +39,18 @@ contract VertixMarketplace is
     error VertixMarketplace__DuplicateListing();
     error VertixMarketplace__NotSeller();
 
-    struct NFTListing {
-        address seller;
-        address nftContract;
-        uint256 tokenId;
-        uint256 price;
-        bool active;
-    }
+    error VertixMarketplace__IncorrectDuration(uint24 duration);
+    error VertixMarketplace__AlreadyListedForAuction();
+    error VertixMarketplace__AuctionExpired();
+    error VertixMarketplace__AuctionBidTooLow(uint256 bidAmount);
+    error VertixMarketplace__AuctionInactive();
+    error VertixMarketplace__ContractInsufficientBalance();
+    error VertixMarketplace__AuctionOngoing(uint256 timestamp);
+    error VertixMarketplace__FeeTransferFailed();
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
 
-    struct NonNFTListing {
-        address seller;
-        VertixUtils.AssetType assetType;
-        string assetId;
-        uint256 price;
-        string metadata;
-        bytes32 verificationHash;
-        bool active;
-    }
-
-    // State variables
-    IVertixNFT public nftContract;
-    IVertixGovernance public governanceContract;
-    address public escrowContract;
-    uint256 private _listingIdCounter;
-    mapping(uint256 => NFTListing) private _nftListings;
-    mapping(uint256 => NonNFTListing) private _nonNFTListings;
-    mapping(bytes32 => bool) private _listingHashes; // Prevents duplicate listings
-
-    // Events
-    event NFTListed(
-        uint256 indexed listingId, address indexed seller, address nftContract, uint256 tokenId, uint256 price
-    );
     event NonNFTListed(
         uint256 indexed listingId,
         address indexed seller,
@@ -85,10 +70,99 @@ contract VertixMarketplace is
     event NonNFTBought(
         uint256 indexed listingId, address indexed buyer, uint256 price, uint256 platformFee, address feeRecipient
     );
+    event NFTListed(
+        uint256 indexed listingId, address indexed seller, address nftContract, uint256 tokenId, uint256 price
+    );
+
     event NFTListingCancelled(uint256 indexed listingId, address indexed seller);
     event NonNFTListingCancelled(uint256 indexed listingId, address indexed seller);
 
-    // Modifiers
+    event NFTAuctionStarted(
+        uint256 indexed auctionId,
+        address indexed seller,
+        uint256 startTime,
+        uint24 duration,
+        uint256 price,
+        address nftContract,
+        uint256 tokenId
+    );
+
+    event BidPlaced(
+        uint256 indexed auctionId, uint256 indexed bidId, address indexed seller, uint256 bidAmount, uint256 tokenId
+    );
+
+    event AuctionEnded(
+        uint256 indexed auctionId, address indexed seller, address indexed bidder, uint256 highestBid, uint256 tokenId
+    );
+    /*//////////////////////////////////////////////////////////////
+                                 TYPES
+    //////////////////////////////////////////////////////////////*/
+
+    struct Bid {
+        uint256 auctionId;
+        uint256 bidAmount;
+        uint256 bidId;
+        address bidder;
+    }
+
+    struct NFTListing {
+        address seller;
+        address nftContract;
+        uint256 tokenId;
+        uint256 price;
+        bool active;
+    }
+
+    struct NonNFTListing {
+        address seller;
+        bool active;
+        string assetId;
+        uint256 price;
+        string metadata;
+        bytes32 verificationHash;
+        VertixUtils.AssetType assetType;
+    }
+
+    struct AuctionDetails {
+        bool active;
+        uint24 duration;
+        uint256 startTime;
+        address seller;
+        address highestBidder;
+        uint256 highestBid;
+        uint256 tokenId;
+        uint256 auctionId;
+        uint256 startingPrice;
+        IVertixNFT nftContract;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            STATE VARIABLES
+    //////////////////////////////////////////////////////////////*/
+    IVertixNFT public nftContract;
+    IVertixGovernance public governanceContract;
+
+    uint24 private constant MIN_AUCTION_DURATION = 1 hours;
+    uint24 private constant MAX_AUCTION_DURATION = 7 days;
+
+    address public escrowContract;
+    uint256 private _auctionIdCounter;
+    uint256 private _listingIdCounter;
+
+    mapping(bytes32 => bool) private _listingHashes;
+    mapping(uint256 => NFTListing) private _nftListings;
+    mapping(uint256 => NonNFTListing) private _nonNFTListings;
+
+    mapping(uint256 tokenId => bool listedForAuction) private _listedForAuction;
+    mapping(uint256 tokenId => uint256 auctionId) private _auctionIdForToken;
+    mapping(uint256 auctionId => uint256 tokenId) private _tokenIdForAuction;
+    mapping(uint256 auctionId => AuctionDetails) private _auctionListings;
+
+    mapping(uint256 auctionId => Bid[]) private _bidsPlaced;
+
+    /*//////////////////////////////////////////////////////////////
+                               MODIFIERS
+    //////////////////////////////////////////////////////////////*/
     modifier onlyValidNFTListing(uint256 listingId) {
         if (!_nftListings[listingId].active) revert VertixMarketplace__InvalidListing();
         _;
@@ -99,7 +173,6 @@ contract VertixMarketplace is
         _;
     }
 
-    // Initialization
     function initialize(address _nftContract, address _governanceContract, address _escrowContract)
         public
         initializer
@@ -112,10 +185,8 @@ contract VertixMarketplace is
         governanceContract = IVertixGovernance(_governanceContract);
         escrowContract = _escrowContract;
         _listingIdCounter = 1;
+        _auctionIdCounter = 1;
     }
-
-    // Upgrade authorization
-    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     function pause() external onlyOwner {
         _pause();
@@ -125,7 +196,6 @@ contract VertixMarketplace is
         _unpause();
     }
 
-    // Public functions
     /**
      * @dev List an NFT for sale
      * @param nftContractAddr Address of NFT contract
@@ -306,7 +376,132 @@ contract VertixMarketplace is
         emit NonNFTListingCancelled(listingId, listing.seller);
     }
 
-    // Internal functions
+    /**
+     * @notice starts an auction for a vertix NFT, which is only callable by the owner
+     * @param _nftContract the contract address of the vertix NFT being auctioned
+     * @param _tokenId the tokenId of the vertix NFT being auctioned
+     * @param _duration the duration of the auction (in seconds)
+     * @param _price minimum price being accepted for the auction
+     */
+    function startNFTAuction(address _nftContract, uint256 _tokenId, uint24 _duration, uint256 _price) external {
+        if (IVertixNFT(_nftContract) != nftContract) revert VertixMarketplace__InvalidNFTContract();
+        if (IVertixNFT(_nftContract).ownerOf(_tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
+        if (_duration < MIN_AUCTION_DURATION || _duration > MAX_AUCTION_DURATION) {
+            revert VertixMarketplace__IncorrectDuration(_duration);
+        }
+
+        VertixUtils.validatePrice(_price);
+
+        if (_listedForAuction[_tokenId]) revert VertixMarketplace__AlreadyListedForAuction();
+
+        uint256 _auctionId = _auctionIdCounter++;
+
+        _listedForAuction[_tokenId] = true;
+        _auctionIdForToken[_tokenId] = _auctionId;
+        _tokenIdForAuction[_auctionId] = _tokenId;
+
+        _auctionListings[_auctionId] = AuctionDetails({
+            active: true,
+            duration: _duration,
+            startTime: block.timestamp,
+            seller: msg.sender,
+            highestBidder: address(0),
+            highestBid: 0,
+            nftContract: IVertixNFT(_nftContract),
+            tokenId: _tokenId,
+            auctionId: _auctionId,
+            startingPrice: _price
+        });
+
+        IVertixNFT(_nftContract).transferFrom(msg.sender, address(this), _tokenId);
+        emit NFTAuctionStarted(_auctionId, msg.sender, block.timestamp, _duration, _price, _nftContract, _tokenId);
+    }
+
+    /**
+     * @notice Place a bid on an active NFT auction
+     * @dev Checks auction validity, minimum bid requirements, and handles bid replacement
+     * @param _auctionId The ID of the auction to bid on
+     */
+    function placeBidForAuction(uint256 _auctionId) external payable nonReentrant {
+        AuctionDetails storage details = _auctionListings[_auctionId];
+
+        if (!details.active) revert VertixMarketplace__AuctionInactive();
+        if (block.timestamp > details.startTime + details.duration) revert VertixMarketplace__AuctionExpired();
+
+        (uint256 platformFeeBps,) = governanceContract.getFeeConfig();
+
+        uint256 platformFee = (details.startingPrice * platformFeeBps) / 10000;
+
+        if (msg.value < details.startingPrice || msg.value <= details.highestBid || msg.value < platformFee) {
+            revert VertixMarketplace__AuctionBidTooLow(msg.value);
+        }
+
+        if (details.highestBid > 0) {
+            if (address(this).balance - msg.value < details.highestBid) {
+                revert VertixMarketplace__ContractInsufficientBalance();
+            }
+            (bool success,) = payable(details.highestBidder).call{value: details.highestBid}("");
+            if (!success) revert VertixMarketplace__TransferFailed();
+        }
+
+        uint256 bidId = _bidsPlaced[_auctionId].length;
+
+        // store placed bid for auctionId
+        Bid memory newBid = Bid({auctionId: _auctionId, bidAmount: msg.value, bidId: bidId, bidder: msg.sender});
+        _bidsPlaced[_auctionId].push(newBid);
+
+        // update highest bid and highest bidder
+        details.highestBid = msg.value;
+        details.highestBidder = msg.sender;
+
+        emit BidPlaced(_auctionId, bidId, msg.sender, msg.value, details.tokenId);
+    }
+
+    /**
+     * @notice End an NFT auction after its duration has expired
+     * @dev Distributes funds and NFT based on auction outcome
+     * @param _auctionId The ID of the auction to end
+     */
+    function endAuction(uint256 _auctionId) external nonReentrant {
+        AuctionDetails storage details = _auctionListings[_auctionId];
+        if (details.seller != msg.sender) revert VertixMarketplace__NotSeller();
+        if (!details.active) revert VertixMarketplace__AuctionInactive();
+        if (block.timestamp < details.startTime + details.duration) {
+            revert VertixMarketplace__AuctionOngoing(block.timestamp);
+        }
+
+        address highestBidder = details.highestBidder;
+        uint256 highestBid = details.highestBid;
+        uint256 tokenID = details.tokenId;
+
+        if (highestBid > 0) {
+            (uint256 platformFeeBps, address feeRecipient) = governanceContract.getFeeConfig();
+
+            uint256 platformFee = (highestBid * platformFeeBps) / 10000;
+
+            if (platformFee > 0) {
+                (bool feeSuccess,) = payable(feeRecipient).call{value: platformFee}("");
+                if (!feeSuccess) revert VertixMarketplace__FeeTransferFailed();
+            }
+
+            //  transfer remainder of sales to seller and NFT to highest bidder
+            (bool sellerSuccess,) = payable(details.seller).call{value: details.highestBid - platformFee}("");
+            if (!sellerSuccess) revert VertixMarketplace__TransferFailed();
+
+            details.nftContract.transferFrom(address(this), highestBidder, tokenID);
+        } else {
+            // if no bid we transfer back the nft to seller
+            details.nftContract.transferFrom(address(this), details.seller, details.tokenId);
+        }
+
+        _listedForAuction[_auctionId] = false;
+        details.active = false;
+        emit AuctionEnded(_auctionId, details.seller, highestBidder, highestBid, tokenID);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      PRIVATE & INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
     /**
      * @dev Refund excess payment to buyer
      * @param paidAmount Amount sent by buyer
@@ -318,6 +513,9 @@ contract VertixMarketplace is
             if (!success) revert VertixMarketplace__TransferFailed();
         }
     }
+
+    // Upgrade authorization
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     // View functions
     /**
@@ -347,11 +545,13 @@ contract VertixMarketplace is
         uint256[] memory tokenIds = nftContract.getCollectionTokens(collectionId);
         uint256[] memory listingIds = new uint256[](tokenIds.length);
         uint256 count = 0;
+        uint256 listingCounter = _listingIdCounter;
 
-        for (uint256 i = 0; i < tokenIds.length; i++) {
+        uint256 tokenLength = tokenIds.length;
+        for (uint256 i = 0; i < tokenLength; i++) {
             bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
             if (_listingHashes[listingHash]) {
-                for (uint256 j = 1; j < _listingIdCounter; j++) {
+                for (uint256 j = 1; j < listingCounter; j++) {
                     if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
                         listingIds[count] = j;
                         count++;
@@ -429,5 +629,78 @@ contract VertixMarketplace is
         sellerProceeds = listing.price - royaltyAmount - platformFee;
 
         return (listing.price, royaltyAmount, royaltyRecipient, platformFee, recipient, sellerProceeds);
+    }
+
+    /**
+     * @dev Returns whether a token is listed for auction
+     * @param tokenId The ID of the NFT
+     * @return bool True if the token is listed for auction, false otherwise
+     */
+    function isListedForAuction(uint256 tokenId) external view returns (bool) {
+        return _listedForAuction[tokenId];
+    }
+
+    /**
+     * @dev Returns the auction ID associated with a token
+     * @param tokenId The ID of the NFT
+     * @return uint256 The auction ID for the token, or 0 if not listed
+     */
+    function getAuctionIdForToken(uint256 tokenId) external view returns (uint256) {
+        return _auctionIdForToken[tokenId];
+    }
+
+    /**
+     * @dev Returns the token ID being auctioned
+     * @param _auctionId The ID of the auction
+     * @return uint256 The token ID of the NFT being auctioned
+     */
+    function getTokenIdForAuction(uint256 _auctionId) external view returns (uint256) {
+        return _tokenIdForAuction[_auctionId];
+    }
+
+    /**
+     * @dev Retrieves a specific bid for an auction
+     * @param _auctionId The ID of the auction
+     * @param _bidId The ID of the bid (index in the bids array)
+     * @return Bid The bid details
+     */
+    function getSingleBidForAuction(uint256 _auctionId, uint256 _bidId) external view returns (Bid memory) {
+        return _bidsPlaced[_auctionId][_bidId];
+    }
+
+    /**
+     * @dev Retrieves all bids for an auction
+     * @param _auctionId The ID of the auction
+     * @return Bid[] Array of all bids
+     */
+    function getAllBidsForAuction(uint256 _auctionId) external view returns (Bid[] memory) {
+        return _bidsPlaced[_auctionId];
+    }
+
+    /**
+     * @dev Retrieves the total number of bids for an auction
+     * @param _auctionId The ID of the auction
+     * @return uint256 The number of bids
+     */
+    function getBidCountForAuction(uint256 _auctionId) external view returns (uint256) {
+        return _bidsPlaced[_auctionId].length;
+    }
+
+    /**
+     * @dev Returns the details of an auction
+     * @param auctionId The ID of the auction
+     * @return AuctionDetails The auction details struct
+     */
+    function getAuctionDetails(uint256 auctionId) external view returns (AuctionDetails memory) {
+        return _auctionListings[auctionId];
+    }
+
+    // @inherit-doc
+    function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data)
+        external
+        pure
+        returns (bytes4)
+    {
+        return this.onERC721Received.selector;
     }
 }
