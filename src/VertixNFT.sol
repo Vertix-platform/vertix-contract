@@ -82,7 +82,7 @@ contract VertixNFT is
         string socialMediaId,
         string uri,
         bytes32 metadataHash,
-        address royaltyRecipient,
+        address indexed royaltyRecipient,
         uint96 royaltyBps
     );
 

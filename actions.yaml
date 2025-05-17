@@ -1,132 +1,141 @@
-# name: Run Foundry Tests
+name: CI for Vertix Contracts
 
-# on:
-#   push:
-#     branches:
-#       - main
-#   pull_request:
-#     branches:
-#       - main
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
-# jobs:
-#   test:
-#     runs-on: ubuntu-latest
-#     steps:
-#       # Checkout the repository
-#       - name: Checkout Repository
-#         uses: actions/checkout@v4
-#         with:
-#           submodules: recursive # Include submodules (e.g., Foundry libraries)
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
 
-#       # Install Foundry
-#       - name: Install Foundry
-#         uses: foundry-rs/foundry-toolchain@v1
-#         with:
-#           version: nightly # Use the latest nightly build; adjust to a specific version if needed
+    steps:
+      # Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-#       # Cache Foundry dependencies
-#       - name: Cache Foundry Dependencies
-#         uses: actions/cache@v3
-#         with:
-#           path: |
-#             ~/.foundry
-#             out
-#             cache
-#           key: ${{ runner.os }}-foundry-${{ hashFiles('**/foundry.toml', '**/remappings.txt', '**/package.json') }}
-#           restore-keys: |
-#             ${{ runner.os }}-foundry-
+      # Set up Foundry
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
 
-#       # Install Node.js (for mock backend or additional scripts)
-#       - name: Set up Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: '16' # Matches your original workflow
+      # Cache Foundry dependencies
+      - name: Cache Foundry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.foundry
+            out
+            cache
+            lib
+          key: foundry-${{ hashFiles('foundry.toml', 'remappings.txt', 'Makefile') }}
+          restore-keys: |
+            foundry-
 
-#       # Install npm dependencies (e.g., for mock backend or scripts)
-#       - name: Install npm Dependencies
-#         run: npm install
-#         if: hashFiles('package.json') != '' # Only run if package.json exists
+      # Install dependencies using Makefile
+      - name: Install dependencies
+        run: make install
+      # Check formatting
+      - name: code formatting
+        run: forge fmt
 
-#       # Install Forge dependencies (e.g., OpenZeppelin, Chainlink contracts)
-#       - name: Install Forge Dependencies
-#         run: forge install
+      # Build contracts
+      - name: Build contracts
+        run: make build
 
-#       # Build the project
-#       - name: Build Contracts
-#         run: forge build
-#         env:
-#           FOUNDRY_PROFILE: ci # Optional: Use a specific profile for CI
+      # # Run tests
+      # - name: Run tests
+      #   run: make test
 
-#       # Run tests
-#       - name: Run Tests
-#         run: forge test --match-path "test/**/*Test.sol" -vvvv
-#         env:
-#           FOUNDRY_PROFILE: ci
-#           # Mock environment variables for Chainlink or backend
-#           CHAINLINK_ORACLE_ADDRESS: "0x0000000000000000000000000000000000000000"
-#           CHAINLINK_JOB_ID: "mock-job-id"
+  deploy-anvil:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-#       # Generate coverage report
-#       - name: Generate Coverage Report
-#         run: forge coverage --report lcov
-#         env:
-#           FOUNDRY_PROFILE: ci
+    steps:
+      # Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-#       # Upload coverage report as artifact
-#       - name: Upload Coverage Report
-#         uses: actions/upload-artifact@v3
-#         with:
-#           name: coverage-report
-#           path: lcov.info
-#           retention-days: 7
+      # Set up Foundry
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
 
-#       # Optional: Run a mock backend for /verify and /value endpoints
-#       - name: Start Mock Backend
-#         run: npm run start-mock-backend &
-#         if: hashFiles('scripts/mock-backend.js') != '' # Only run if mock backend script exists
-#         env:
-#           NODE_ENV: test
+      # Cache Foundry dependencies
+      - name: Cache Foundry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.foundry
+            out
+            cache
+            lib
+          key: foundry-${{ hashFiles('foundry.toml', 'remappings.txt', 'Makefile') }}
+          restore-keys: |
+            foundry-
 
-#       # Optional: Run integration tests with mock backend
-#       - name: Run Integration Tests
-#         run: forge test --match-path "test/integration/**/*Test.sol" -vvvv
-#         if: hashFiles('test/integration/**/*Test.sol') != ''
-#         env:
-#           FOUNDRY_PROFILE: ci
-#           MOCK_BACKEND_URL: http://localhost:3000
+      # Install dependencies
+      - name: Install dependencies
+        run: make install
 
-#   lint:
-#     runs-on: ubuntu-latest
-#     steps:
-#       # Checkout the repository
-#       - name: Checkout Repository
-#         uses: actions/checkout@v4
-#         with:
-#           submodules: recursive
+      # Start Anvil in the background
+      - name: Start Anvil
+        run: anvil --block-time 1 &
+        env:
+          ANVIL_RPC_URL: http://127.0.0.1:8545
+          ANVIL_PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-#       # Install Foundry
-#       - name: Install Foundry
-#         uses: foundry-rs/foundry-toolchain@v1
-#         with:
-#           version: nightly
+      # Deploy to Anvil
+      - name: Deploy to Anvil
+        run: make deploy ARGS="--network anvil"
+        env:
+          ANVIL_RPC_URL: http://127.0.0.1:8545
+          ANVIL_PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-#       # Cache Foundry dependencies
-#       - name: Cache Foundry Dependencies
-#         uses: actions/cache@v3
-#         with:
-#           path: |
-#             ~/.foundry
-#             out
-#             cache
-#           key: ${{ runner.os }}-foundry-${{ hashFiles('**/foundry.toml', '**/remappings.txt') }}
-#           restore-keys: |
-#             ${{ runner.os }}-foundry-
+  # deploy-sepolia:
+  #   runs-on: ubuntu-latest
+  #   needs: build-and-test
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   environment: sepolia-deployment
 
-#       # Run Forge format check
-#       - name: Check Code Formatting
-#         run: forge fmt --check
+  #   steps:
+  #     # Checkout the repository
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-#       # Run Solhint for additional linting (optional)
-#       - name: Run Solhint
-#         run: npx solhint 'src/**/*.sol'
-#         if: hashFiles('.solhint.json') != '' # Only run if Solhint config exists
+  #     # Set up Foundry
+  #     - name: Install Foundry
+  #       uses: foundry-rs/foundry-toolchain@v1
+  #       with:
+  #         version: nightly
+
+  #     # Cache Foundry dependencies
+  #     - name: Cache Foundry dependencies
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: |
+  #           ~/.foundry
+  #           out
+  #           cache
+  #           lib
+  #         key: foundry-${{ hashFiles('foundry.toml', 'remappings.txt', 'Makefile') }}
+  #         restore-keys: |
+  #           foundry-
+
+  #     # Install dependencies
+  #     - name: Install dependencies
+  #       run: make install
+
+  #     # Deploy to Sepolia
+  #     - name: Deploy to Sepolia
+  #       run: make deploy ARGS="--network sepolia"
+  #       env:
+  #         SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+  #         PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+  #         ETHERSCAN_API_URL: ${{ secrets.ETHERSCAN_API_URL }}

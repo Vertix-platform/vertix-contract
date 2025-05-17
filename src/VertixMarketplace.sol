@@ -173,7 +173,6 @@ contract VertixMarketplace is
         _;
     }
 
-    // Initialization
     function initialize(address _nftContract, address _governanceContract, address _escrowContract)
         public
         initializer
