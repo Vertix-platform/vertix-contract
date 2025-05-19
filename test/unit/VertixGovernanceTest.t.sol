@@ -241,7 +241,7 @@ contract VertixGovernanceTest is Test {
                     VIEW FUNCTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetFeeConfig() public view{
+    function test_GetFeeConfig() public view {
         (uint16 feeBps, address recipient) = governance.getFeeConfig();
         assertEq(feeBps, DEFAULT_FEE_BPS);
         assertEq(recipient, feeRecipient);
