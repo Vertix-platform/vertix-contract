@@ -54,7 +54,7 @@ contract VertixGovernanceTest is Test {
                     INITIALIZATION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Initialization() public {
+    function test_Initialization() public view {
         assertEq(governance.owner(), owner);
 
         (uint16 feeBps, address recipient) = governance.getFeeConfig();
@@ -241,13 +241,13 @@ contract VertixGovernanceTest is Test {
                     VIEW FUNCTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetFeeConfig() public {
+    function test_GetFeeConfig() public view{
         (uint16 feeBps, address recipient) = governance.getFeeConfig();
         assertEq(feeBps, DEFAULT_FEE_BPS);
         assertEq(recipient, feeRecipient);
     }
 
-    function test_GetContractAddresses() public {
+    function test_GetContractAddresses() public view {
         (address marketplaceAddr, address escrowAddr) = governance.getContractAddresses();
         assertEq(marketplaceAddr, marketplace);
         assertEq(escrowAddr, escrow);
@@ -257,7 +257,7 @@ contract VertixGovernanceTest is Test {
                     CONSTANTS TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Constants() public {
+    function test_Constants() public view {
         assertEq(governance.MAX_FEE_BPS(), MAX_FEE_BPS);
         assertEq(governance.DEFAULT_FEE_BPS(), DEFAULT_FEE_BPS);
     }
