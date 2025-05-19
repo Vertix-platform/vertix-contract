@@ -18,7 +18,7 @@ interface IVertixGovernance {
     }
 
     // Events
-    event PlatformFeeUpdated(uint16 newFee);
+    event PlatformFeeUpdated(uint16 oldFee, uint16 newFee);
     event FeeRecipientUpdated(address newRecipient);
     event MarketplaceUpdated(address newMarketplace);
     event EscrowUpdated(address newEscrow);

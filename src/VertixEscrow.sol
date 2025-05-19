@@ -185,22 +185,6 @@ contract VertixEscrow is
         require(success, "Transfer failed");
     }
 
-    function refund(uint256 listingId) external nonReentrant whenNotPaused {
-        Escrow storage escrow = escrows[listingId];
-        if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
-        if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
-        if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
-
-        escrow.completed = true;
-        uint256 amount = escrow.amount;
-        emit FundsReleased(listingId, escrow.buyer, amount);
-
-        delete escrows[listingId];
-
-        (bool success,) = escrow.buyer.call{value: amount}("");
-        require(success, "Transfer failed");
-    }
-
     function setEscrowDuration(uint32 newDuration) external onlyOwner {
         if(newDuration == 0) revert VertixEscrow__InvalidDuration();
         escrowDuration = newDuration;

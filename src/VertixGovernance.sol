@@ -11,12 +11,16 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  * @dev Manages platform parameters with gas-optimized operations
  */
 contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+    // Errors
+    error VertixGovernance__InvalidFee();
+    error VertixGovernance__ZeroAddress();
+    error VertixGovernance__SameValue();
+
     // Type declarations
     struct FeeConfig {
         uint16 feeBps; // Platform fee in basis points (1% = 100)
         address feeRecipient; // Address receiving fees
     }
-
     struct ContractAddresses {
         address marketplace;
         address escrow;
@@ -25,11 +29,6 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     // Constants
     uint16 public constant MAX_FEE_BPS = 1000; // 10% maximum fee
     uint16 public constant DEFAULT_FEE_BPS = 100; // 1% default fee
-
-    // Errors
-    error InvalidFee();
-    error ZeroAddress();
-    error SameValue();
 
     // State variables
     FeeConfig private _feeConfig;
@@ -52,7 +51,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         __UUPSUpgradeable_init();
 
         if (_escrow == address(0) || _feeRecipient == address(0)) {
-            revert ZeroAddress();
+            revert VertixGovernance__ZeroAddress();
         }
 
         contracts = ContractAddresses(_marketplace, _escrow);
@@ -62,16 +61,15 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     // Upgrade authorization
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    // External functions
 
-    // Public functions
+    // External functions
     /**
      * @dev Update platform fee (max 10%)
      * @param newFee New fee in basis points (100 = 1%)
      */
     function setPlatformFee(uint16 newFee) external onlyOwner {
-        if (newFee > MAX_FEE_BPS) revert InvalidFee();
-        if (newFee == _feeConfig.feeBps) revert SameValue();
+        if (newFee > MAX_FEE_BPS) revert VertixGovernance__InvalidFee();
+        if (newFee == _feeConfig.feeBps) revert VertixGovernance__SameValue();
         uint16 oldFee = _feeConfig.feeBps;
 
         _feeConfig.feeBps = newFee;
@@ -83,8 +81,8 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
      * @param newRecipient New fee recipient address
      */
     function setFeeRecipient(address newRecipient) external onlyOwner {
-        if (newRecipient == address(0)) revert ZeroAddress();
-        if (newRecipient == _feeConfig.feeRecipient) revert SameValue();
+        if (newRecipient == address(0)) revert VertixGovernance__ZeroAddress();
+        if (newRecipient == _feeConfig.feeRecipient) revert VertixGovernance__SameValue();
 
         _feeConfig.feeRecipient = newRecipient;
         emit FeeRecipientUpdated(newRecipient);
@@ -95,8 +93,8 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
      * @param newMarketplace New marketplace address
      */
     function setMarketplace(address newMarketplace) external onlyOwner {
-        if (newMarketplace == address(0)) revert ZeroAddress();
-        if (newMarketplace == contracts.marketplace) revert SameValue();
+        if (newMarketplace == address(0)) revert VertixGovernance__ZeroAddress();
+        if (newMarketplace == contracts.marketplace) revert VertixGovernance__SameValue();
 
         contracts.marketplace = newMarketplace;
         emit MarketplaceUpdated(newMarketplace);
@@ -107,8 +105,8 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
      * @param newEscrow New escrow address
      */
     function setEscrow(address newEscrow) external onlyOwner {
-        if (newEscrow == address(0)) revert ZeroAddress();
-        if (newEscrow == contracts.escrow) revert SameValue();
+        if (newEscrow == address(0)) revert VertixGovernance__ZeroAddress();
+        if (newEscrow == contracts.escrow) revert VertixGovernance__SameValue();
 
         contracts.escrow = newEscrow;
         emit EscrowUpdated(newEscrow);
