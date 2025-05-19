@@ -336,7 +336,7 @@ contract VertixMarketplace is
         uint256 escrowAmount = listing.price - platformFee;
         (bool success,) = escrowContract.call{value: escrowAmount}(
             abi.encodeWithSignature(
-                "lockFunds(uint256,address,address,uint256)", listingId, listing.seller, msg.sender, escrowAmount
+                "lockFunds(uint256, address, address)", listingId, listing.seller, msg.sender
             )
         );
         if (!success) revert VertixMarketplace__TransferFailed();

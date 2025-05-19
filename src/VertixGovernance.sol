@@ -36,7 +36,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     ContractAddresses public contracts;
 
     // Events
-    event PlatformFeeUpdated(uint16 newFee);
+    event PlatformFeeUpdated(uint16 oldFee, uint16 newFee);
     event FeeRecipientUpdated(address newRecipient);
     event MarketplaceUpdated(address newMarketplace);
     event EscrowUpdated(address newEscrow);
@@ -72,9 +72,10 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     function setPlatformFee(uint16 newFee) external onlyOwner {
         if (newFee > MAX_FEE_BPS) revert InvalidFee();
         if (newFee == _feeConfig.feeBps) revert SameValue();
+        uint16 oldFee = _feeConfig.feeBps;
 
         _feeConfig.feeBps = newFee;
-        emit PlatformFeeUpdated(newFee);
+        emit PlatformFeeUpdated( oldFee, newFee);
     }
 
     /**

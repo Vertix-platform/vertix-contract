@@ -29,6 +29,8 @@ contract VertixEscrow is
     error VertixEscrow__NoActiveDispute();
     error VertixEscrow__InvalidWinner();
     error VertixEscrow__DeadlineNotPassed();
+    error VertixEscrow__ZeroAddress();
+    error VertixEscrow__InvalidDuration();
 
     struct Escrow {
         address seller;
@@ -44,7 +46,7 @@ contract VertixEscrow is
     uint32 public escrowDuration;
 
     // Events
-    event FundsLocked(uint256 indexed listingId, address indexed seller, address indexed buyer, uint256 amount);
+    event FundsLocked(uint256 indexed listingId, address indexed seller, address indexed buyer, uint96 amount, uint32 deadline);
     event FundsReleased(uint256 indexed listingId, address indexed recipient, uint256 amount);
     event DisputeRaised(uint256 indexed listingId);
     event DisputeResolved(uint256 indexed listingId, address indexed winner);
@@ -88,6 +90,7 @@ contract VertixEscrow is
     function lockFunds(uint256 listingId, address seller, address buyer) external payable nonReentrant whenNotPaused {
         if (msg.value == 0 || msg.value > type(uint96).max) revert VertixEscrow__IncorrectAmountSent();
         if (escrows[listingId].seller != address(0)) revert VertixEscrow__EscrowAlreadyExists();
+        if (seller == address(0) || buyer == address(0)) revert VertixEscrow__ZeroAddress();
 
         escrows[listingId] = Escrow({
             seller: seller,
@@ -98,7 +101,7 @@ contract VertixEscrow is
             disputed: false
         });
 
-        emit FundsLocked(listingId, seller, buyer, msg.value);
+        emit FundsLocked(listingId, seller, buyer, uint96(msg.value), escrows[listingId].deadline);
     }
 
     /**
@@ -106,7 +109,7 @@ contract VertixEscrow is
      * @param listingId The ID of the listing
      */
     function confirmTransfer(uint256 listingId) external nonReentrant whenNotPaused onlyEscrowParticipant(listingId) {
-        Escrow memory escrow = escrows[listingId];
+        Escrow storage escrow = escrows[listingId];
 
         if (msg.sender != escrow.buyer) revert VertixEscrow__OnlyBuyerCanConfirm();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
@@ -114,12 +117,14 @@ contract VertixEscrow is
 
         escrow.completed = true;
         uint256 amount = escrow.amount;
+        address seller = escrow.seller;
+
+        emit FundsReleased(listingId, seller, amount);
         delete escrows[listingId];
 
-        (bool success,) = escrow.seller.call{value: amount}("");
+        (bool success,) = seller.call{value: amount}("");
         require(success, "Transfer failed");
 
-        emit FundsReleased(listingId, escrow.seller, amount);
     }
 
     /**
@@ -127,7 +132,7 @@ contract VertixEscrow is
      * @param listingId The ID of the listing
      */
     function raiseDispute(uint256 listingId) external whenNotPaused onlyEscrowParticipant(listingId) {
-        Escrow memory escrow = escrows[listingId];
+        Escrow storage escrow = escrows[listingId];
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (escrow.disputed) revert VertixEscrow__DisputeAlreadyRaised();
 
@@ -141,20 +146,21 @@ contract VertixEscrow is
      * @param winner The address of the dispute winner
      */
     function resolveDispute(uint256 listingId, address winner) external onlyOwner nonReentrant whenNotPaused {
-        Escrow memory escrow = escrows[listingId];
+        Escrow storage escrow = escrows[listingId];
+        if (escrow.seller == address(0) || escrow.buyer == address(0)) revert VertixEscrow__ZeroAddress();
         if (!escrow.disputed) revert VertixEscrow__NoActiveDispute();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (winner != escrow.seller && winner != escrow.buyer) revert VertixEscrow__InvalidWinner();
 
         escrow.completed = true;
         uint256 amount = escrow.amount;
+        emit FundsReleased(listingId, winner, amount);
+        emit DisputeResolved(listingId, winner);
+
         delete escrows[listingId];
 
         (bool success,) = winner.call{value: amount}("");
         require(success, "Transfer failed");
-
-        emit FundsReleased(listingId, winner, amount);
-        emit DisputeResolved(listingId, winner);
     }
 
     /**
@@ -162,23 +168,46 @@ contract VertixEscrow is
      * @param listingId The ID of the listing
      */
     function refund(uint256 listingId) external nonReentrant whenNotPaused {
-        Escrow memory escrow = escrows[listingId];
+        Escrow storage escrow = escrows[listingId];
+        if(escrow.seller == address(0) || escrow.buyer == address(0)) revert VertixEscrow__ZeroAddress();
         if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
 
         escrow.completed = true;
         uint256 amount = escrow.amount;
+        address buyer = escrow.buyer;
+        emit FundsReleased(listingId, buyer, amount);
+
+        delete escrows[listingId];
+
+        (bool success,) = buyer.call{value: amount}("");
+        require(success, "Transfer failed");
+    }
+
+    function refund(uint256 listingId) external nonReentrant whenNotPaused {
+        Escrow storage escrow = escrows[listingId];
+        if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
+        if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
+        if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
+
+        escrow.completed = true;
+        uint256 amount = escrow.amount;
+        emit FundsReleased(listingId, escrow.buyer, amount);
+
         delete escrows[listingId];
 
         (bool success,) = escrow.buyer.call{value: amount}("");
         require(success, "Transfer failed");
+    }
 
-        emit FundsReleased(listingId, escrow.buyer, amount);
+    function setEscrowDuration(uint32 newDuration) external onlyOwner {
+        if(newDuration == 0) revert VertixEscrow__InvalidDuration();
+        escrowDuration = newDuration;
     }
 
     /*//////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
+                    VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     /**
      * @dev Get escrow details

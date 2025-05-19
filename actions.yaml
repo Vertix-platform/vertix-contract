@@ -39,17 +39,21 @@ jobs:
       # Install dependencies using Makefile
       - name: Install dependencies
         run: make install
-      # Check formatting
+      # Code formatting
       - name: code formatting
         run: forge fmt
+
+      # Check formatting
+       - name: Check formatting
+         run: forge fmt --check
 
       # Build contracts
       - name: Build contracts
         run: make build
 
-      # # Run tests
-      # - name: Run tests
-      #   run: make test
+      # Run tests
+      - name: Run tests
+        run: make test
 
   deploy-anvil:
     runs-on: ubuntu-latest
