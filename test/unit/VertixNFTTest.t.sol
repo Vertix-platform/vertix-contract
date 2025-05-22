@@ -79,8 +79,7 @@ contract VertixNFTTest is Test {
 
         // Deploy proxy and initialize
         ERC1967Proxy proxy = new ERC1967Proxy(
-            address(nftImplementation),
-            abi.encodeWithSelector(VertixNFT.initialize.selector, verificationServer)
+            address(nftImplementation), abi.encodeWithSelector(VertixNFT.initialize.selector, verificationServer)
         );
         nft = VertixNFT(address(proxy));
         vm.stopPrank();
@@ -270,7 +269,9 @@ contract VertixNFTTest is Test {
 
         vm.prank(user);
         vm.expectEmit(true, true, true, true);
-        emit SocialMediaNFTMinted(recipient, TOKEN_ID, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, recipient, ROYALTY_BPS);
+        emit SocialMediaNFTMinted(
+            recipient, TOKEN_ID, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, recipient, ROYALTY_BPS
+        );
 
         nft.mintSocialMediaNFT(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
 
@@ -410,7 +411,8 @@ contract VertixNFTTest is Test {
         // Verify state preservation
         assertEq(upgradedNFT.verificationServer(), originalVerificationServer);
         assertEq(upgradedNFT.owner(), owner);
-        (, string memory name,, string memory image, uint256 maxSupply,) = upgradedNFT.getCollectionDetails(COLLECTION_ID);
+        (, string memory name,, string memory image, uint256 maxSupply,) =
+            upgradedNFT.getCollectionDetails(COLLECTION_ID);
         assertEq(name, NAME);
         assertEq(image, IMAGE);
         assertEq(maxSupply, MAX_SUPPLY);

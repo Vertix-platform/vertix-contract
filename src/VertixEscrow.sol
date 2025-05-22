@@ -46,7 +46,9 @@ contract VertixEscrow is
     uint32 public escrowDuration;
 
     // Events
-    event FundsLocked(uint256 indexed listingId, address indexed seller, address indexed buyer, uint96 amount, uint32 deadline);
+    event FundsLocked(
+        uint256 indexed listingId, address indexed seller, address indexed buyer, uint96 amount, uint32 deadline
+    );
     event FundsReleased(uint256 indexed listingId, address indexed recipient, uint256 amount);
     event DisputeRaised(uint256 indexed listingId);
     event DisputeResolved(uint256 indexed listingId, address indexed winner);
@@ -124,7 +126,6 @@ contract VertixEscrow is
 
         (bool success,) = seller.call{value: amount}("");
         require(success, "Transfer failed");
-
     }
 
     /**
@@ -169,7 +170,7 @@ contract VertixEscrow is
      */
     function refund(uint256 listingId) external nonReentrant whenNotPaused {
         Escrow storage escrow = escrows[listingId];
-        if(escrow.seller == address(0) || escrow.buyer == address(0)) revert VertixEscrow__ZeroAddress();
+        if (escrow.seller == address(0) || escrow.buyer == address(0)) revert VertixEscrow__ZeroAddress();
         if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
@@ -186,7 +187,7 @@ contract VertixEscrow is
     }
 
     function setEscrowDuration(uint32 newDuration) external onlyOwner {
-        if(newDuration == 0) revert VertixEscrow__InvalidDuration();
+        if (newDuration == 0) revert VertixEscrow__InvalidDuration();
         escrowDuration = newDuration;
     }
 

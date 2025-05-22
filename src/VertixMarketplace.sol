@@ -335,9 +335,7 @@ contract VertixMarketplace is
         // Transfer remaining funds to escrow
         uint256 escrowAmount = listing.price - platformFee;
         (bool success,) = escrowContract.call{value: escrowAmount}(
-            abi.encodeWithSignature(
-                "lockFunds(uint256, address, address)", listingId, listing.seller, msg.sender
-            )
+            abi.encodeWithSignature("lockFunds(uint256, address, address)", listingId, listing.seller, msg.sender)
         );
         if (!success) revert VertixMarketplace__TransferFailed();
 
@@ -696,7 +694,24 @@ contract VertixMarketplace is
     }
 
     // @inherit-doc
-    function onERC721Received(address /** operator **/, address /** from **/, uint256 /** tokenId **/, bytes calldata /** data **/ )
+    function onERC721Received(
+        address,
+        /**
+         * operator *
+         */
+        address,
+        /**
+         * from *
+         */
+        uint256,
+        /**
+         * tokenId *
+         */
+        bytes calldata
+    )
+        /**
+         * data *
+         */
         external
         pure
         returns (bytes4)
