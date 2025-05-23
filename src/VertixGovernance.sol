@@ -21,6 +21,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         uint16 feeBps; // Platform fee in basis points (1% = 100)
         address feeRecipient; // Address receiving fees
     }
+
     struct ContractAddresses {
         address marketplace;
         address escrow;
@@ -61,7 +62,6 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     // Upgrade authorization
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-
     // External functions
     /**
      * @dev Update platform fee (max 10%)
@@ -73,7 +73,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         uint16 oldFee = _feeConfig.feeBps;
 
         _feeConfig.feeBps = newFee;
-        emit PlatformFeeUpdated( oldFee, newFee);
+        emit PlatformFeeUpdated(oldFee, newFee);
     }
 
     /**

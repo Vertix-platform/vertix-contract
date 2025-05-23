@@ -19,7 +19,9 @@ contract VertixEscrowTest is Test {
     uint256 public constant AMOUNT = 1 ether;
     uint32 public constant NEW_ESCROW_DURATION = 14 days;
 
-    event FundsLocked(uint256 indexed listingId, address indexed seller, address indexed buyer, uint96 amount, uint32 deadline);
+    event FundsLocked(
+        uint256 indexed listingId, address indexed seller, address indexed buyer, uint96 amount, uint32 deadline
+    );
     event FundsReleased(uint256 indexed listingId, address indexed recipient, uint256 amount);
     event DisputeRaised(uint256 indexed listingId);
     event DisputeResolved(uint256 indexed listingId, address indexed winner);
@@ -30,10 +32,8 @@ contract VertixEscrowTest is Test {
         escrowImplementation = new VertixEscrow();
 
         // Deploy proxy and initialize
-        ERC1967Proxy proxy = new ERC1967Proxy(
-            address(escrowImplementation),
-            abi.encodeWithSelector(VertixEscrow.initialize.selector)
-        );
+        ERC1967Proxy proxy =
+            new ERC1967Proxy(address(escrowImplementation), abi.encodeWithSelector(VertixEscrow.initialize.selector));
         escrow = VertixEscrow(address(proxy));
         vm.stopPrank();
 
@@ -170,7 +170,6 @@ contract VertixEscrowTest is Test {
         uint256 initialBuyerBalance = buyer.balance;
         escrow.lockFunds{value: AMOUNT}(LISTING_ID, seller, buyer);
         uint256 initialSellerBalance = seller.balance; // 1
-
 
         // Confirm transfer
         vm.prank(buyer);

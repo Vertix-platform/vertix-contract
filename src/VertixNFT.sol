@@ -42,13 +42,13 @@ contract VertixNFT is
         string name;
         string symbol;
         string image;
-        uint8 maxSupply;
-        uint8 currentSupply;
+        uint16 maxSupply;
+        uint16 currentSupply;
         uint256[] tokenIds;
     }
 
     // State variables
-    uint8 public constant MAX_COLLECTION_SIZE = 100;
+    uint16 public constant MAX_COLLECTION_SIZE = 1000;
     uint256 public constant MAX_ROYALTY_BPS = 1000; // 10% max royalty
     uint256 private _nextTokenId;
     uint256 private _nextCollectionId;
@@ -109,12 +109,11 @@ contract VertixNFT is
      * @param image Collection image URI
      * @param maxSupply Maximum NFTs in collection
      */
-    function createCollection(string calldata name, string calldata symbol, string calldata image, uint8 maxSupply)
+    function createCollection(string calldata name, string calldata symbol, string calldata image, uint16 maxSupply)
         external
         returns (uint256)
     {
-        if (bytes(name).length == 0) revert VertixNFT__EmptyString();
-        if (bytes(symbol).length == 0) revert VertixNFT__EmptyString();
+        if (bytes(name).length == 0 || bytes(symbol).length == 0) revert VertixNFT__EmptyString();
         if (maxSupply == 0) revert VertixNFT__ZeroSupply();
         if (maxSupply > MAX_COLLECTION_SIZE) revert VertixNFT__ExceedsMaxCollectionSize();
 
