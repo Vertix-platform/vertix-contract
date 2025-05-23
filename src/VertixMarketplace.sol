@@ -9,6 +9,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IVertixNFT} from "./interfaces/IVertixNFT.sol";
 import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
+import {IVertixEscrow} from "./interfaces/IVertixEscrow.sol";
 import {VertixUtils} from "./libraries/VertixUtils.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -141,11 +142,12 @@ contract VertixMarketplace is
     //////////////////////////////////////////////////////////////*/
     IVertixNFT public nftContract;
     IVertixGovernance public governanceContract;
+    IVertixEscrow public escrowContract;
 
     uint24 private constant MIN_AUCTION_DURATION = 1 hours;
     uint24 private constant MAX_AUCTION_DURATION = 7 days;
 
-    address public escrowContract;
+    // address public escrowContract;
     uint256 private _auctionIdCounter;
     uint256 private _listingIdCounter;
 
@@ -183,7 +185,7 @@ contract VertixMarketplace is
         __Pausable_init();
         nftContract = IVertixNFT(_nftContract);
         governanceContract = IVertixGovernance(_governanceContract);
-        escrowContract = _escrowContract;
+        escrowContract = IVertixEscrow(_escrowContract);
         _listingIdCounter = 1;
         _auctionIdCounter = 1;
     }
@@ -205,10 +207,13 @@ contract VertixMarketplace is
     function listNFT(address nftContractAddr, uint256 tokenId, uint256 price) external nonReentrant whenNotPaused {
         VertixUtils.validatePrice(price);
         if (nftContractAddr != address(nftContract)) revert VertixMarketplace__InvalidNFTContract();
-        if (IERC721(nftContractAddr).ownerOf(tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
 
+        // Check for duplicate listing first
         bytes32 listingHash = keccak256(abi.encodePacked(nftContractAddr, tokenId));
         if (_listingHashes[listingHash]) revert VertixMarketplace__DuplicateListing();
+
+        // Then check ownership
+        if (IERC721(nftContractAddr).ownerOf(tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
 
         IERC721(nftContractAddr).transferFrom(msg.sender, address(this), tokenId);
 
@@ -334,12 +339,7 @@ contract VertixMarketplace is
 
         // Transfer remaining funds to escrow
         uint256 escrowAmount = listing.price - platformFee;
-        (bool success,) = escrowContract.call{value: escrowAmount}(
-            abi.encodeWithSignature(
-                "lockFunds(uint256, address, address)", listingId, listing.seller, msg.sender
-            )
-        );
-        if (!success) revert VertixMarketplace__TransferFailed();
+        escrowContract.lockFunds{value: escrowAmount}(listingId, listing.seller, msg.sender);
 
         // Refund excess payment
         _refundExcessPayment(msg.value, listing.price);
@@ -541,72 +541,72 @@ contract VertixMarketplace is
         return _listingIdCounter;
     }
 
-    function getListingsByCollection(uint256 collectionId) external view returns (uint256[] memory) {
-        uint256[] memory tokenIds = nftContract.getCollectionTokens(collectionId);
-        uint256[] memory listingIds = new uint256[](tokenIds.length);
-        uint256 count = 0;
-        uint256 listingCounter = _listingIdCounter;
+    // function getListingsByCollection(uint256 collectionId) external view returns (uint256[] memory) {
+    //     uint256[] memory tokenIds = nftContract.getCollectionTokens(collectionId);
+    //     uint256[] memory listingIds = new uint256[](tokenIds.length);
+    //     uint256 count = 0;
+    //     uint256 listingCounter = _listingIdCounter;
 
-        uint256 tokenLength = tokenIds.length;
-        for (uint256 i = 0; i < tokenLength; i++) {
-            bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
-            if (_listingHashes[listingHash]) {
-                for (uint256 j = 1; j < listingCounter; j++) {
-                    if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
-                        listingIds[count] = j;
-                        count++;
-                        break;
-                    }
-                }
-            }
-        }
+    //     uint256 tokenLength = tokenIds.length;
+    //     for (uint256 i = 0; i < tokenLength; i++) {
+    //         bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
+    //         if (_listingHashes[listingHash]) {
+    //             for (uint256 j = 1; j < listingCounter; j++) {
+    //                 if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
+    //                     listingIds[count] = j;
+    //                     count++;
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //     }
 
-        uint256[] memory result = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            result[i] = listingIds[i];
-        }
-        return result;
-    }
+    //     uint256[] memory result = new uint256[](count);
+    //     for (uint256 i = 0; i < count; i++) {
+    //         result[i] = listingIds[i];
+    //     }
+    //     return result;
+    // }
 
-    function getListingsByPriceRange(uint256 minPrice, uint256 maxPrice) external view returns (uint256[] memory) {
-        uint256[] memory listingIds = new uint256[](0);
-        uint256 count = 0;
+    // function getListingsByPriceRange(uint256 minPrice, uint256 maxPrice) external view returns (uint256[] memory) {
+    //     uint256[] memory listingIds = new uint256[](0);
+    //     uint256 count = 0;
 
-        for (uint256 i = 1; i < _listingIdCounter; i++) {
-            if (_nftListings[i].active && _nftListings[i].price >= minPrice && _nftListings[i].price <= maxPrice) {
-                // Manually resize the array
-                uint256[] memory newListingIds = new uint256[](count + 1);
-                for (uint256 j = 0; j < count; j++) {
-                    newListingIds[j] = listingIds[j];
-                }
-                newListingIds[count] = i;
-                listingIds = newListingIds;
-                count++;
-            }
-        }
+    //     for (uint256 i = 1; i < _listingIdCounter; i++) {
+    //         if (_nftListings[i].active && _nftListings[i].price >= minPrice && _nftListings[i].price <= maxPrice) {
+    //             // Manually resize the array
+    //             uint256[] memory newListingIds = new uint256[](count + 1);
+    //             for (uint256 j = 0; j < count; j++) {
+    //                 newListingIds[j] = listingIds[j];
+    //             }
+    //             newListingIds[count] = i;
+    //             listingIds = newListingIds;
+    //             count++;
+    //         }
+    //     }
 
-        return listingIds;
-    }
+    //     return listingIds;
+    // }
 
-    function getListingsByAssetType(VertixUtils.AssetType assetType) external view returns (uint256[] memory) {
-        uint256[] memory listingIds = new uint256[](0);
-        uint256 count = 0;
+    // function getListingsByAssetType(VertixUtils.AssetType assetType) external view returns (uint256[] memory) {
+    //     uint256[] memory listingIds = new uint256[](0);
+    //     uint256 count = 0;
 
-        for (uint256 i = 1; i < _listingIdCounter; i++) {
-            if (_nonNFTListings[i].active && _nonNFTListings[i].assetType == assetType) {
-                // Manually resize the array
-                uint256[] memory newListingIds = new uint256[](count + 1);
-                for (uint256 j = 0; j < count; j++) {
-                    newListingIds[j] = listingIds[j];
-                }
-                newListingIds[count] = i;
-                listingIds = newListingIds;
-                count++;
-            }
-        }
+    //     for (uint256 i = 1; i < _listingIdCounter; i++) {
+    //         if (_nonNFTListings[i].active && _nonNFTListings[i].assetType == assetType) {
+    //             // Manually resize the array
+    //             uint256[] memory newListingIds = new uint256[](count + 1);
+    //             for (uint256 j = 0; j < count; j++) {
+    //                 newListingIds[j] = listingIds[j];
+    //             }
+    //             newListingIds[count] = i;
+    //             listingIds = newListingIds;
+    //             count++;
+    //         }
+    //     }
 
-        return listingIds;
-    }
+    //     return listingIds;
+    // }
 
     function getPurchaseDetails(uint256 listingId)
         external

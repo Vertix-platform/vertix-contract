@@ -7,7 +7,7 @@ pragma solidity ^0.8.20;
  */
 library VertixUtils {
     // Errors
-    error VertixUtils__ZeroPrice();
+    error VertixUtils__InvalidPrice();
     error VertixUtils__EmptyProof();
 
     // Type declarations
@@ -28,7 +28,7 @@ library VertixUtils {
      * @param price The price to validate
      */
     function validatePrice(uint256 price) internal pure {
-        if (price < MIN_PRICE) revert VertixUtils__ZeroPrice();
+        if (price < MIN_PRICE) revert VertixUtils__InvalidPrice();
     }
 
     /**
