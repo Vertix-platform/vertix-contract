@@ -541,72 +541,72 @@ contract VertixMarketplace is
         return _listingIdCounter;
     }
 
-    // function getListingsByCollection(uint256 collectionId) external view returns (uint256[] memory) {
-    //     uint256[] memory tokenIds = nftContract.getCollectionTokens(collectionId);
-    //     uint256[] memory listingIds = new uint256[](tokenIds.length);
-    //     uint256 count = 0;
-    //     uint256 listingCounter = _listingIdCounter;
+    function getListingsByCollection(uint256 collectionId) external view returns (uint256[] memory) {
+        uint256[] memory tokenIds = nftContract.getCollectionTokens(collectionId);
+        uint256[] memory listingIds = new uint256[](tokenIds.length);
+        uint256 count = 0;
+        uint256 listingCounter = _listingIdCounter;
 
-    //     uint256 tokenLength = tokenIds.length;
-    //     for (uint256 i = 0; i < tokenLength; i++) {
-    //         bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
-    //         if (_listingHashes[listingHash]) {
-    //             for (uint256 j = 1; j < listingCounter; j++) {
-    //                 if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
-    //                     listingIds[count] = j;
-    //                     count++;
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //     }
+        uint256 tokenLength = tokenIds.length;
+        for (uint256 i = 0; i < tokenLength; i++) {
+            bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
+            if (_listingHashes[listingHash]) {
+                for (uint256 j = 1; j < listingCounter; j++) {
+                    if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
+                        listingIds[count] = j;
+                        count++;
+                        break;
+                    }
+                }
+            }
+        }
 
-    //     uint256[] memory result = new uint256[](count);
-    //     for (uint256 i = 0; i < count; i++) {
-    //         result[i] = listingIds[i];
-    //     }
-    //     return result;
-    // }
+        uint256[] memory result = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = listingIds[i];
+        }
+        return result;
+    }
 
-    // function getListingsByPriceRange(uint256 minPrice, uint256 maxPrice) external view returns (uint256[] memory) {
-    //     uint256[] memory listingIds = new uint256[](0);
-    //     uint256 count = 0;
+    function getListingsByPriceRange(uint256 minPrice, uint256 maxPrice) external view returns (uint256[] memory) {
+        uint256[] memory listingIds = new uint256[](0);
+        uint256 count = 0;
 
-    //     for (uint256 i = 1; i < _listingIdCounter; i++) {
-    //         if (_nftListings[i].active && _nftListings[i].price >= minPrice && _nftListings[i].price <= maxPrice) {
-    //             // Manually resize the array
-    //             uint256[] memory newListingIds = new uint256[](count + 1);
-    //             for (uint256 j = 0; j < count; j++) {
-    //                 newListingIds[j] = listingIds[j];
-    //             }
-    //             newListingIds[count] = i;
-    //             listingIds = newListingIds;
-    //             count++;
-    //         }
-    //     }
+        for (uint256 i = 1; i < _listingIdCounter; i++) {
+            if (_nftListings[i].active && _nftListings[i].price >= minPrice && _nftListings[i].price <= maxPrice) {
+                // Manually resize the array
+                uint256[] memory newListingIds = new uint256[](count + 1);
+                for (uint256 j = 0; j < count; j++) {
+                    newListingIds[j] = listingIds[j];
+                }
+                newListingIds[count] = i;
+                listingIds = newListingIds;
+                count++;
+            }
+        }
 
-    //     return listingIds;
-    // }
+        return listingIds;
+    }
 
-    // function getListingsByAssetType(VertixUtils.AssetType assetType) external view returns (uint256[] memory) {
-    //     uint256[] memory listingIds = new uint256[](0);
-    //     uint256 count = 0;
+    function getListingsByAssetType(VertixUtils.AssetType assetType) external view returns (uint256[] memory) {
+        uint256[] memory listingIds = new uint256[](0);
+        uint256 count = 0;
 
-    //     for (uint256 i = 1; i < _listingIdCounter; i++) {
-    //         if (_nonNFTListings[i].active && _nonNFTListings[i].assetType == assetType) {
-    //             // Manually resize the array
-    //             uint256[] memory newListingIds = new uint256[](count + 1);
-    //             for (uint256 j = 0; j < count; j++) {
-    //                 newListingIds[j] = listingIds[j];
-    //             }
-    //             newListingIds[count] = i;
-    //             listingIds = newListingIds;
-    //             count++;
-    //         }
-    //     }
+        for (uint256 i = 1; i < _listingIdCounter; i++) {
+            if (_nonNFTListings[i].active && _nonNFTListings[i].assetType == assetType) {
+                // Manually resize the array
+                uint256[] memory newListingIds = new uint256[](count + 1);
+                for (uint256 j = 0; j < count; j++) {
+                    newListingIds[j] = listingIds[j];
+                }
+                newListingIds[count] = i;
+                listingIds = newListingIds;
+                count++;
+            }
+        }
 
-    //     return listingIds;
-    // }
+        return listingIds;
+    }
 
     function getPurchaseDetails(uint256 listingId)
         external

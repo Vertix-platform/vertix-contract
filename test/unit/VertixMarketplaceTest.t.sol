@@ -410,68 +410,68 @@ contract VertixMarketplaceTest is Test {
         assertEq(marketplace.getTotalListings(), 3);
     }
 
-    // function test_GetListingsByCollection() public {
-    //     // Create collection and mint NFTs
-    //     vm.startPrank(seller);
-    //     uint256 collectionId = nftContract.createCollection("Test Collection", "TC", "image.jpg", 5);
+    function test_GetListingsByCollection() public {
+        // Create collection and mint NFTs
+        vm.startPrank(seller);
+        uint256 collectionId = nftContract.createCollection("Test Collection", "TC", "image.jpg", 5);
 
-    //     // Mint NFTs to collection
-    //     uint256 tokenId2 = 2;
-    //     uint256 tokenId3 = 3;
-    //     nftContract.mintToCollection(seller, collectionId, "uri2", METADATA_HASH, ROYALTY_BPS);
-    //     nftContract.mintToCollection(seller, collectionId, "uri3", METADATA_HASH, ROYALTY_BPS);
+        // Mint NFTs to collection
+        uint256 tokenId2 = 2;
+        uint256 tokenId3 = 3;
+        nftContract.mintToCollection(seller, collectionId, "uri2", METADATA_HASH, ROYALTY_BPS);
+        nftContract.mintToCollection(seller, collectionId, "uri3", METADATA_HASH, ROYALTY_BPS);
 
-    //     // List NFTs
-    //     nftContract.approve(address(marketplace), tokenId2);
-    //     nftContract.approve(address(marketplace), tokenId3);
-    //     marketplace.listNFT(address(nftContract), tokenId2, PRICE);
-    //     marketplace.listNFT(address(nftContract), tokenId3, PRICE * 2);
-    //     vm.stopPrank();
+        // List NFTs
+        nftContract.approve(address(marketplace), tokenId2);
+        nftContract.approve(address(marketplace), tokenId3);
+        marketplace.listNFT(address(nftContract), tokenId2, PRICE);
+        marketplace.listNFT(address(nftContract), tokenId3, PRICE * 2);
+        vm.stopPrank();
 
-    //     uint256[] memory listings = marketplace.getListingsByCollection(collectionId);
-    //     assertEq(listings.length, 2);
-    // }
+        uint256[] memory listings = marketplace.getListingsByCollection(collectionId);
+        assertEq(listings.length, 2);
+    }
 
-    // function test_GetListingsByPriceRange() public {
-    //     // List multiple NFTs with different prices
-    //     vm.startPrank(seller);
+    function test_GetListingsByPriceRange() public {
+        // List multiple NFTs with different prices
+        vm.startPrank(seller);
 
-    //     // Mint additional NFTs
-    //     uint256 tokenId2 = 2;
-    //     uint256 tokenId3 = 3;
-    //     nftContract.mintSingleNFT(seller, "uri2", METADATA_HASH, ROYALTY_BPS);
-    //     nftContract.mintSingleNFT(seller, "uri3", METADATA_HASH, ROYALTY_BPS);
+        // Mint additional NFTs
+        uint256 tokenId2 = 2;
+        uint256 tokenId3 = 3;
+        nftContract.mintSingleNFT(seller, "uri2", METADATA_HASH, ROYALTY_BPS);
+        nftContract.mintSingleNFT(seller, "uri3", METADATA_HASH, ROYALTY_BPS);
 
-    //     // List with different prices
-    //     nftContract.approve(address(marketplace), TOKEN_ID);
-    //     nftContract.approve(address(marketplace), tokenId2);
-    //     nftContract.approve(address(marketplace), tokenId3);
+        // List with different prices
+        nftContract.approve(address(marketplace), TOKEN_ID);
+        nftContract.approve(address(marketplace), tokenId2);
+        nftContract.approve(address(marketplace), tokenId3);
 
-    //     marketplace.listNFT(address(nftContract), TOKEN_ID, 1 ether);
-    //     marketplace.listNFT(address(nftContract), tokenId2, 2 ether);
-    //     marketplace.listNFT(address(nftContract), tokenId3, 5 ether);
-    //     vm.stopPrank();
+        marketplace.listNFT(address(nftContract), TOKEN_ID, 1 ether);
+        marketplace.listNFT(address(nftContract), tokenId2, 2 ether);
+        marketplace.listNFT(address(nftContract), tokenId3, 5 ether);
+        vm.stopPrank();
 
-    //     uint256[] memory listings = marketplace.getListingsByPriceRange(1 ether, 3 ether);
-    //     assertEq(listings.length, 2);
-    // }
+        uint256[] memory listings = marketplace.getListingsByPriceRange(1 ether, 3 ether);
+        assertEq(listings.length, 2);
+    }
 
-    // function test_GetListingsByAssetType() public {
-    //     // List different asset types
-    //     vm.startPrank(seller);
-    //     marketplace.listNonNFTAsset(uint8(VertixUtils.AssetType.Domain), "domain1.com", PRICE, "metadata1", "proof1");
-    //     marketplace.listNonNFTAsset(uint8(VertixUtils.AssetType.Domain), "domain2.com", PRICE, "metadata2", "proof2");
-    //     marketplace.listNonNFTAsset(
-    //         uint8(VertixUtils.AssetType.SocialMedia), "twitter.com/user", PRICE, "metadata3", "proof3"
-    //     );
-    //     vm.stopPrank();
+    function test_GetListingsByAssetType() public {
+        // List different asset types
+        vm.startPrank(seller);
+        marketplace.listNonNFTAsset(uint8(VertixUtils.AssetType.Domain), "domain1.com", PRICE, "metadata1", "proof1");
+        marketplace.listNonNFTAsset(uint8(VertixUtils.AssetType.Domain), "domain2.com", PRICE, "metadata2", "proof2");
+        marketplace.listNonNFTAsset(
+            uint8(VertixUtils.AssetType.SocialMedia), "twitter.com/user", PRICE, "metadata3", "proof3"
+        );
+        vm.stopPrank();
 
-    //     uint256[] memory domainListings = marketplace.getListingsByAssetType(VertixUtils.AssetType.Domain);
-    //     assertEq(domainListings.length, 2);
+        uint256[] memory domainListings = marketplace.getListingsByAssetType(VertixUtils.AssetType.Domain);
+        assertEq(domainListings.length, 2);
 
-    //     uint256[] memory socialListings = marketplace.getListingsByAssetType(VertixUtils.AssetType.SocialMedia);
-    //     assertEq(socialListings.length, 1);
-    // }
+        uint256[] memory socialListings = marketplace.getListingsByAssetType(VertixUtils.AssetType.SocialMedia);
+        assertEq(socialListings.length, 1);
+    }
 
     function test_GetPurchaseDetails() public {
         // List NFT
