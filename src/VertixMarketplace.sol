@@ -165,13 +165,15 @@ contract VertixMarketplace is
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
-    modifier onlyValidNFTListing(uint256 listingId) {
-        if (!_nftListings[listingId].active) revert VertixMarketplace__InvalidListing();
-        _;
-    }
+    enum ListingType { NFT, NonNFT }
 
-    modifier onlyValidNonNFTListing(uint256 listingId) {
-        if (!_nonNFTListings[listingId].active) revert VertixMarketplace__InvalidListing();
+    modifier onlyValidListing(ListingType lType, uint256 listingId) {
+        if (lType == ListingType.NFT && !_nftListings[listingId].active) {
+            revert VertixMarketplace__InvalidListing();
+        }
+        if (lType == ListingType.NonNFT && !_nonNFTListings[listingId].active) {
+            revert VertixMarketplace__InvalidListing();
+        }
         _;
     }
 
@@ -265,7 +267,7 @@ contract VertixMarketplace is
      * @dev Buy an NFT listing, paying royalties and platform fees
      * @param listingId ID of the listing to purchase
      */
-    function buyNFT(uint256 listingId) external payable nonReentrant whenNotPaused onlyValidNFTListing(listingId) {
+    function buyNFT(uint256 listingId) external payable nonReentrant whenNotPaused onlyValidListing(ListingType.NFT, listingId) {
         NFTListing memory listing = _nftListings[listingId];
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
 
@@ -315,7 +317,7 @@ contract VertixMarketplace is
         payable
         nonReentrant
         whenNotPaused
-        onlyValidNonNFTListing(listingId)
+        onlyValidListing(ListingType.NonNFT, listingId)
     {
         NonNFTListing memory listing = _nonNFTListings[listingId];
         if (msg.value < listing.price) revert VertixMarketplace__InsufficientPayment();
@@ -351,7 +353,7 @@ contract VertixMarketplace is
      * @dev Cancel an NFT listing
      * @param listingId The ID of the listing
      */
-    function cancelNFTListing(uint256 listingId) external nonReentrant onlyValidNFTListing(listingId) {
+    function cancelNFTListing(uint256 listingId) external nonReentrant onlyValidListing(ListingType.NFT, listingId) {
         NFTListing memory listing = _nftListings[listingId];
         if (msg.sender != listing.seller) revert VertixMarketplace__NotSeller();
 
@@ -366,7 +368,7 @@ contract VertixMarketplace is
      * @dev Cancel a non-NFT listing
      * @param listingId The ID of the listing
      */
-    function cancelNonNFTListing(uint256 listingId) external nonReentrant onlyValidNonNFTListing(listingId) {
+    function cancelNonNFTListing(uint256 listingId) external nonReentrant onlyValidListing(ListingType.NonNFT, listingId) {
         NonNFTListing memory listing = _nonNFTListings[listingId];
         if (msg.sender != listing.seller) revert VertixMarketplace__NotSeller();
 
@@ -541,73 +543,6 @@ contract VertixMarketplace is
         return _listingIdCounter;
     }
 
-    function getListingsByCollection(uint256 collectionId) external view returns (uint256[] memory) {
-        uint256[] memory tokenIds = nftContract.getCollectionTokens(collectionId);
-        uint256[] memory listingIds = new uint256[](tokenIds.length);
-        uint256 count = 0;
-        uint256 listingCounter = _listingIdCounter;
-
-        uint256 tokenLength = tokenIds.length;
-        for (uint256 i = 0; i < tokenLength; i++) {
-            bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenIds[i]));
-            if (_listingHashes[listingHash]) {
-                for (uint256 j = 1; j < listingCounter; j++) {
-                    if (_nftListings[j].tokenId == tokenIds[i] && _nftListings[j].active) {
-                        listingIds[count] = j;
-                        count++;
-                        break;
-                    }
-                }
-            }
-        }
-
-        uint256[] memory result = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            result[i] = listingIds[i];
-        }
-        return result;
-    }
-
-    function getListingsByPriceRange(uint256 minPrice, uint256 maxPrice) external view returns (uint256[] memory) {
-        uint256[] memory listingIds = new uint256[](0);
-        uint256 count = 0;
-
-        for (uint256 i = 1; i < _listingIdCounter; i++) {
-            if (_nftListings[i].active && _nftListings[i].price >= minPrice && _nftListings[i].price <= maxPrice) {
-                // Manually resize the array
-                uint256[] memory newListingIds = new uint256[](count + 1);
-                for (uint256 j = 0; j < count; j++) {
-                    newListingIds[j] = listingIds[j];
-                }
-                newListingIds[count] = i;
-                listingIds = newListingIds;
-                count++;
-            }
-        }
-
-        return listingIds;
-    }
-
-    function getListingsByAssetType(VertixUtils.AssetType assetType) external view returns (uint256[] memory) {
-        uint256[] memory listingIds = new uint256[](0);
-        uint256 count = 0;
-
-        for (uint256 i = 1; i < _listingIdCounter; i++) {
-            if (_nonNFTListings[i].active && _nonNFTListings[i].assetType == assetType) {
-                // Manually resize the array
-                uint256[] memory newListingIds = new uint256[](count + 1);
-                for (uint256 j = 0; j < count; j++) {
-                    newListingIds[j] = listingIds[j];
-                }
-                newListingIds[count] = i;
-                listingIds = newListingIds;
-                count++;
-            }
-        }
-
-        return listingIds;
-    }
-
     function getPurchaseDetails(uint256 listingId)
         external
         view
@@ -668,14 +603,6 @@ contract VertixMarketplace is
         return _bidsPlaced[_auctionId][_bidId];
     }
 
-    /**
-     * @dev Retrieves all bids for an auction
-     * @param _auctionId The ID of the auction
-     * @return Bid[] Array of all bids
-     */
-    function getAllBidsForAuction(uint256 _auctionId) external view returns (Bid[] memory) {
-        return _bidsPlaced[_auctionId];
-    }
 
     /**
      * @dev Retrieves the total number of bids for an auction
