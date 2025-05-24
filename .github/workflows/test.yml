@@ -34,8 +34,13 @@ jobs:
 
       - name: Run Forge fmt
         run: |
-          forge fmt --check
+          forge fmt
         id: fmt
+
+      - name: Run Forge fmt check
+        run: |
+          forge fmt --check
+        id: fmt-check
 
       - name: Run Forge build
         run: |
