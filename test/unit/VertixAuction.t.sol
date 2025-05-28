@@ -25,6 +25,7 @@ contract VertixMarketplaceAuctionTest is Test {
     address user3 = makeAddr("user3");
     address escrowContract = makeAddr("escrow");
     address feeRecipient = makeAddr("feeRecipient");
+    address verificationServer = makeAddr("verificationServer");
 
     address INVALID_NFT = makeAddr("invalidNft");
 
@@ -56,7 +57,7 @@ contract VertixMarketplaceAuctionTest is Test {
         // Deploy and initialize marketplace
         marketplace = new VertixMarketplace();
 
-        governanceContract = new MockVertixGovernance(feeRecipient, address(marketplace), escrowContract);
+        governanceContract = new MockVertixGovernance(feeRecipient, address(marketplace), escrowContract, verificationServer);
 
         marketplace.initialize(address(nftContract), address(governanceContract), escrowContract);
 

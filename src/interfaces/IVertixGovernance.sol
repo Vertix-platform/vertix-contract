@@ -34,8 +34,12 @@ interface IVertixGovernance {
 
     function setEscrow(address newEscrow) external;
 
+    function setVerificationServer()  external;
+
     // View functions
     function getFeeConfig() external view returns (uint16 feeBps, address recipient);
 
     function getContractAddresses() external view returns (address marketplace, address escrow);
+
+    function getVerificationServer() external view returns (address);
 }

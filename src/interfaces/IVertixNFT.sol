@@ -52,6 +52,8 @@ interface IVertixNFT is IERC721 {
             uint256 currentSupply
         );
 
+    function getUsedSocialMediaIds(string calldata socialMediaId) external view returns (bool);
+
     // Events
     event CollectionCreated(
         uint256 indexed collectionId,

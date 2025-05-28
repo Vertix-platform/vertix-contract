@@ -34,12 +34,14 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     // State variables
     FeeConfig private _feeConfig;
     ContractAddresses public contracts;
+    address public verificationServer;
 
     // Events
     event PlatformFeeUpdated(uint16 oldFee, uint16 newFee);
     event FeeRecipientUpdated(address newRecipient);
     event MarketplaceUpdated(address newMarketplace);
     event EscrowUpdated(address newEscrow);
+    event VerificationServerUpdated(address newServer);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -47,16 +49,17 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     }
 
     // Initialization
-    function initialize(address _marketplace, address _escrow, address _feeRecipient) public initializer {
+    function initialize(address _marketplace, address _escrow, address _feeRecipient,address _verificationServer) public initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
 
-        if (_escrow == address(0) || _feeRecipient == address(0)) {
+        if (_escrow == address(0) || _feeRecipient == address(0) || _verificationServer == address(0)) {
             revert VertixGovernance__ZeroAddress();
         }
 
         contracts = ContractAddresses(_marketplace, _escrow);
         _feeConfig = FeeConfig(DEFAULT_FEE_BPS, _feeRecipient);
+        verificationServer = _verificationServer;
     }
 
     // Upgrade authorization
@@ -112,6 +115,19 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         emit EscrowUpdated(newEscrow);
     }
 
+    /**
+     * @dev Set verification server
+     * @param newServer New server address
+     */
+
+    function setVerificationServer(address newServer) external onlyOwner {
+        if (newServer == address(0)) revert VertixGovernance__ZeroAddress();
+        if (newServer == verificationServer) revert VertixGovernance__SameValue();
+        verificationServer = newServer;
+        emit VerificationServerUpdated(newServer);
+    }
+
+
     // View functions
     /**
      * @dev Get current fee configuration
@@ -129,5 +145,13 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
      */
     function getContractAddresses() external view returns (address marketplace, address escrow) {
         return (contracts.marketplace, contracts.escrow);
+    }
+
+    /**
+     * @dev Get current server address
+     * @return Server address
+     */
+    function getVerificationServer() external view returns (address) {
+        return verificationServer;
     }
 }

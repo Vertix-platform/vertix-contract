@@ -26,6 +26,8 @@ contract VertixGovernanceTest is Test {
     address public newFeeRecipient = makeAddr("newFeeRecipient");
     address public newMarketplace = makeAddr("newMarketplace");
     address public newEscrow = makeAddr("newEscrow");
+    address public verificationServer = makeAddr("verificationServer");
+    address public newServer = makeAddr("newServer");
 
     uint16 public constant DEFAULT_FEE_BPS = 100; // 1%
     uint16 public constant NEW_FEE_BPS = 200; // 2%
@@ -36,6 +38,7 @@ contract VertixGovernanceTest is Test {
     event FeeRecipientUpdated(address newRecipient);
     event MarketplaceUpdated(address newMarketplace);
     event EscrowUpdated(address newEscrow);
+    event VerificationServerUpdated(address newServer);
 
     function setUp() public {
         vm.startPrank(owner);
@@ -44,7 +47,7 @@ contract VertixGovernanceTest is Test {
         // Deploy proxy and initialize
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(governanceImplementation),
-            abi.encodeWithSelector(VertixGovernance.initialize.selector, marketplace, escrow, feeRecipient)
+            abi.encodeWithSelector(VertixGovernance.initialize.selector, marketplace, escrow, feeRecipient, verificationServer)
         );
         governance = VertixGovernance(address(proxy));
         vm.stopPrank();
@@ -64,12 +67,15 @@ contract VertixGovernanceTest is Test {
         (address marketplaceAddr, address escrowAddr) = governance.getContractAddresses();
         assertEq(marketplaceAddr, marketplace);
         assertEq(escrowAddr, escrow);
+
+        address verificationServerAddr = governance.getVerificationServer();
+        assertEq(verificationServerAddr, verificationServer);
     }
 
     function test_CannotReinitialize() public {
         vm.prank(owner);
         vm.expectRevert();
-        governance.initialize(marketplace, escrow, feeRecipient);
+        governance.initialize(marketplace, escrow, feeRecipient, verificationServer);
     }
 
     function test_RevertIf_InitializeWithZeroAddresses() public {
@@ -80,7 +86,15 @@ contract VertixGovernanceTest is Test {
         vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(newImplementation),
-            abi.encodeWithSelector(VertixGovernance.initialize.selector, marketplace, address(0), feeRecipient)
+            abi.encodeWithSelector(VertixGovernance.initialize.selector, marketplace, address(0), feeRecipient, verificationServer)
+        );
+
+        // Test with zero verification server
+        newImplementation = new VertixGovernance();
+        vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
+        proxy = new ERC1967Proxy(
+            address(newImplementation),
+            abi.encodeWithSelector(VertixGovernance.initialize.selector, marketplace, escrow, feeRecipient, address(0))
         );
 
         // Test with zero fee recipient
@@ -88,14 +102,14 @@ contract VertixGovernanceTest is Test {
         vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
         proxy = new ERC1967Proxy(
             address(newImplementation),
-            abi.encodeWithSelector(VertixGovernance.initialize.selector, marketplace, escrow, address(0))
+            abi.encodeWithSelector(VertixGovernance.initialize.selector, marketplace, escrow, address(0), verificationServer)
         );
 
         // Marketplace can be zero initially
         newImplementation = new VertixGovernance();
         proxy = new ERC1967Proxy(
             address(newImplementation),
-            abi.encodeWithSelector(VertixGovernance.initialize.selector, address(0), escrow, feeRecipient)
+            abi.encodeWithSelector(VertixGovernance.initialize.selector, address(0), escrow, feeRecipient, verificationServer)
         );
 
         vm.stopPrank();
@@ -238,6 +252,35 @@ contract VertixGovernanceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                    VERIFICATION SERVER TESTS
+    //////////////////////////////////////////////////////////////*/
+    function test_SetVerificationServer() public {
+        vm.prank(owner);
+
+        vm.expectEmit(false, false, true, false);
+        emit VerificationServerUpdated(newServer);
+
+        governance.setVerificationServer(newServer);
+        address server = governance.getVerificationServer();
+        assertEq(server, newServer);
+    }
+    function test_RevertIf_NonOwnerSetsVerificationServer() public {
+        vm.prank(user);
+        vm.expectRevert();
+        governance.setVerificationServer(verificationServer);
+    }
+    function test_RevertIf_SetZeroAddressVerificationServer() public {
+        vm.prank(owner);
+        vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
+        governance.setVerificationServer(address(0));
+    }
+    function test_RevertIf_SetSameVerificationServer() public {
+        vm.prank(owner);
+        vm.expectRevert(VertixGovernance.VertixGovernance__SameValue.selector);
+        governance.setVerificationServer(verificationServer);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                     VIEW FUNCTION TESTS
     //////////////////////////////////////////////////////////////*/
 
@@ -251,6 +294,11 @@ contract VertixGovernanceTest is Test {
         (address marketplaceAddr, address escrowAddr) = governance.getContractAddresses();
         assertEq(marketplaceAddr, marketplace);
         assertEq(escrowAddr, escrow);
+    }
+
+    function test_GetVerificationServer() public view {
+        address server = governance.getVerificationServer();
+        assertEq(server, verificationServer);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -273,6 +321,7 @@ contract VertixGovernanceTest is Test {
         // Get current fee config for comparison after upgrade
         (uint16 oldFeeBps, address oldFeeRecipient) = governance.getFeeConfig();
         (address oldMarketplace, address oldEscrow) = governance.getContractAddresses();
+        address oldVerificationServer = governance.getVerificationServer();
 
         // Upgrade the proxy to point to the new implementation
         governance.upgradeToAndCall(address(newImplementation), "");
@@ -285,11 +334,13 @@ contract VertixGovernanceTest is Test {
         // Checking state was preserved
         (uint16 newFeeBps, address newFeeRecipientAddr) = upgradedGovernance.getFeeConfig();
         (address newMarketplaceAddr, address newEscrowAddr) = upgradedGovernance.getContractAddresses();
+        address verificationServerAddr = upgradedGovernance.getVerificationServer();
 
         assertEq(newFeeBps, oldFeeBps);
         assertEq(newFeeRecipientAddr, oldFeeRecipient);
         assertEq(newMarketplaceAddr, oldMarketplace);
         assertEq(newEscrowAddr, oldEscrow);
+        assertEq(verificationServerAddr, oldVerificationServer);
         assertEq(upgradedGovernance.owner(), owner);
 
         // Testing the new functionality from V2

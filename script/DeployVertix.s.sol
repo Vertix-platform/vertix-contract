@@ -16,65 +16,80 @@ contract DeployVertix is Script {
         address governance;
         address escrow;
         address marketplace;
+        address verificationServer;
+        address feeRecipient;
     }
 
-    VertixAddresses addresses;
-
-    function run() external returns (VertixAddresses memory) {
+    function deployVertix() public returns (VertixAddresses memory) {
         HelperConfig helperConfig = new HelperConfig();
         (address verificationServer, address feeRecipient, uint256 deployerKey) = helperConfig.activeNetworkConfig();
 
         vm.startBroadcast(deployerKey);
 
         // Deploy VertixNFT
-        addresses.nft = deployProxy(
+        address nft = deployProxy(
             address(new VertixNFT()),
             abi.encodeWithSelector(VertixNFT.initialize.selector, verificationServer),
             "VertixNFT"
         );
 
         // Deploy VertixEscrow
-        addresses.escrow = deployProxy(
-            address(new VertixEscrow()), abi.encodeWithSelector(VertixEscrow.initialize.selector), "VertixEscrow"
+        address escrow = deployProxy(
+            address(new VertixEscrow()),
+            abi.encodeWithSelector(VertixEscrow.initialize.selector),
+            "VertixEscrow"
         );
 
         // Deploy VertixGovernance
-        addresses.governance = deployProxy(
+        address governance = deployProxy(
             address(new VertixGovernance()),
             abi.encodeWithSelector(
                 VertixGovernance.initialize.selector,
-                address(0), // Placeholder for marketplace
-                addresses.escrow,
-                feeRecipient
+                address(0), // Placeholder for marketplace (updated later)
+                escrow,
+                feeRecipient,
+                verificationServer
             ),
             "VertixGovernance"
         );
 
         // Deploy VertixMarketplace
-        addresses.marketplace = deployProxy(
+        address marketplace = deployProxy(
             address(new VertixMarketplace()),
             abi.encodeWithSelector(
-                VertixMarketplace.initialize.selector, addresses.nft, addresses.governance, addresses.escrow
+                VertixMarketplace.initialize.selector, nft, governance, escrow
             ),
             "VertixMarketplace"
         );
 
-        // Update VertixGovernance
-        VertixGovernance(addresses.governance).setMarketplace(addresses.marketplace);
-        console.log("VertixGovernance marketplace set to:", addresses.marketplace);
+        // Update VertixGovernance with marketplace address
+        VertixGovernance(governance).setMarketplace(marketplace);
+        console.log("VertixGovernance marketplace set to:", marketplace);
 
-        // Transfer VertixEscrow ownership
-        VertixEscrow(addresses.escrow).transferOwnership(addresses.governance);
-        console.log("VertixEscrow ownership transferred to:", addresses.governance);
+        // Transfer VertixEscrow ownership to governance
+        VertixEscrow(escrow).transferOwnership(governance);
+        console.log("VertixEscrow ownership transferred to:", governance);
 
         vm.stopBroadcast();
 
-        return addresses;
+        return VertixAddresses({
+            nft: nft,
+            governance: governance,
+            escrow: escrow,
+            marketplace: marketplace,
+            verificationServer: verificationServer,
+            feeRecipient: feeRecipient
+        });
     }
 
     function deployProxy(address impl, bytes memory initData, string memory name) internal returns (address proxy) {
         console.log(string.concat(name, " implementation deployed at:"), impl);
         proxy = address(new ERC1967Proxy(impl, initData));
         console.log(string.concat(name, " proxy deployed at:"), proxy);
+        return proxy;
+    }
+
+    function run() external returns (VertixAddresses memory) {
+        return deployVertix();
     }
 }

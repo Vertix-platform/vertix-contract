@@ -77,13 +77,17 @@ contract VertixMarketplaceTest is Test {
             VertixGovernance.initialize.selector,
             address(0), // marketplace will be set later
             address(escrow),
-            feeRecipient
+            feeRecipient,
+            verificationServer // Added verification server
         );
         ERC1967Proxy governanceProxy = new ERC1967Proxy(address(governanceImpl), governanceInitData);
         governance = VertixGovernance(address(governanceProxy));
 
         bytes memory marketplaceInitData = abi.encodeWithSelector(
-            VertixMarketplace.initialize.selector, address(nftContract), address(governance), address(escrow)
+            VertixMarketplace.initialize.selector,
+            address(nftContract),
+            address(governance),
+            address(escrow)
         );
         ERC1967Proxy marketplaceProxy = new ERC1967Proxy(address(marketplaceImpl), marketplaceInitData);
         marketplace = VertixMarketplace(address(marketplaceProxy));
@@ -220,6 +224,14 @@ contract VertixMarketplaceTest is Test {
         marketplace.listNonNFTAsset(uint8(VertixUtils.AssetType.SocialMedia), assetId, PRICE, "metadata2", "proof2");
         vm.stopPrank();
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    LISTING SOCIAL MEDIA NFT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+
+
+
 
     /*//////////////////////////////////////////////////////////////
                            NFT BUYING TESTS

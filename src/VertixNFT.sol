@@ -11,6 +11,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 
 /**
  * @title VertixNFT
@@ -48,11 +49,11 @@ contract VertixNFT is
     }
 
     // State variables
+    IVertixGovernance public governanceContract;
     uint16 public constant MAX_COLLECTION_SIZE = 1000;
     uint256 public constant MAX_ROYALTY_BPS = 1000; // 10% max royalty
     uint256 private _nextTokenId;
     uint256 private _nextCollectionId;
-    address public verificationServer; // Address authorized to verify social media links
     mapping(string => bool) public usedSocialMediaIds; // Prevent duplicate social media NFTs
     mapping(uint256 => Collection) public collections;
     mapping(uint256 => uint256) public tokenToCollection;
@@ -93,9 +94,9 @@ contract VertixNFT is
         __ERC2981_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        verificationServer = _verificationServer;
         _nextTokenId = 1;
         _nextCollectionId = 1;
+        governanceContract = IVertixGovernance(_verificationServer);
     }
 
     // UUPS upgradeability
@@ -170,14 +171,6 @@ contract VertixNFT is
     }
 
     /**
-     * @dev Update verification server address
-     * @param newServer New verification server address
-     */
-    function setVerificationServer(address newServer) external onlyOwner {
-        verificationServer = newServer;
-    }
-
-    /**
      * @dev Mint social media connected NFT with signature verification
      * @param to Recipient address (must match signed message)
      * @param socialMediaId Verified social media identifier
@@ -200,12 +193,7 @@ contract VertixNFT is
         if (royaltyBps > MAX_ROYALTY_BPS) revert VertixNFT__InvalidRoyaltyPercentage();
 
         // Verify the signature
-        bytes32 messageHash = keccak256(abi.encodePacked(to, socialMediaId));
-        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
-        address recoveredSigner = ECDSA.recover(ethSignedHash, signature);
-        if (recoveredSigner != verificationServer) {
-            revert VertixNFT__InvalidSignature();
-        }
+        _verifySignature(to, socialMediaId, signature);
 
         // Mint the NFT
         uint256 tokenId = _nextTokenId++;
@@ -250,43 +238,57 @@ contract VertixNFT is
         emit NFTMinted(to, tokenId, collectionId, uri, metadataHash, royaltyRecipient, royaltyBps);
     }
 
-    // View functions
-    /**
-     * @dev Get collection tokens
-     * @param collectionId Collection ID
-     */
-    function getCollectionTokens(uint256 collectionId) external view returns (uint256[] memory) {
-        if (collections[collectionId].creator == address(0)) revert VertixNFT__InvalidCollection();
-        return collections[collectionId].tokenIds;
+    function _verifySignature(address to, string calldata socialMediaId, bytes calldata signature) internal view {
+        address verificationServer = IVertixGovernance(governanceContract).getVerificationServer();
+        bytes32 messageHash = keccak256(abi.encodePacked(to, socialMediaId));
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        address recoveredSigner = ECDSA.recover(ethSignedHash, signature);
+        if (recoveredSigner != verificationServer) {
+            revert VertixNFT__InvalidSignature();
+        }
     }
 
-    /**
-     * @dev Get collection details
-     * @param collectionId Collection ID
-     */
-    function getCollectionDetails(uint256 collectionId)
-        external
-        view
-        returns (
-            address creator,
-            string memory name,
-            string memory symbol,
-            string memory image,
-            uint256 maxSupply,
-            uint256 currentSupply
-        )
-    {
-        Collection memory collection = collections[collectionId];
-        if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
+    // View functions
+    // /**
+    //  * @dev Get collection tokens
+    //  * @param collectionId Collection ID
+    //  */
+    // function getCollectionTokens(uint256 collectionId) external view returns (uint256[] memory) {
+    //     if (collections[collectionId].creator == address(0)) revert VertixNFT__InvalidCollection();
+    //     return collections[collectionId].tokenIds;
+    // }
 
-        return (
-            collection.creator,
-            collection.name,
-            collection.symbol,
-            collection.image,
-            collection.maxSupply,
-            collection.currentSupply
-        );
+    // /**
+    //  * @dev Get collection details
+    //  * @param collectionId Collection ID
+    //  */
+    // function getCollectionDetails(uint256 collectionId)
+    //     external
+    //     view
+    //     returns (
+    //         address creator,
+    //         string memory name,
+    //         string memory symbol,
+    //         string memory image,
+    //         uint256 maxSupply,
+    //         uint256 currentSupply
+    //     )
+    // {
+    //     Collection memory collection = collections[collectionId];
+    //     if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
+
+    //     return (
+    //         collection.creator,
+    //         collection.name,
+    //         collection.symbol,
+    //         collection.image,
+    //         collection.maxSupply,
+    //         collection.currentSupply
+    //     );
+    // }
+
+    function getUsedSocialMediaIds(string calldata socialMediaId) external view returns (bool) {
+        return usedSocialMediaIds[socialMediaId];
     }
 
     // Overrides

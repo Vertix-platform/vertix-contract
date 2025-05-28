@@ -13,7 +13,8 @@ import {IVertixEscrow} from "./interfaces/IVertixEscrow.sol";
 import {VertixUtils} from "./libraries/VertixUtils.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 /**
  * @title VertixMarketplace
  * @dev Decentralized marketplace for NFT and non-NFT assets with royalties and platform fees
@@ -48,6 +49,9 @@ contract VertixMarketplace is
     error VertixMarketplace__ContractInsufficientBalance();
     error VertixMarketplace__AuctionOngoing(uint256 timestamp);
     error VertixMarketplace__FeeTransferFailed();
+    error VertixMarketplace__InvalidSocialMediaNFT();
+    error VertixMarketplace__InvalidSignature();
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -264,6 +268,60 @@ contract VertixMarketplace is
     }
 
     /**
+     * @dev List a social media NFT for sale with off-chain price verification
+     * @param tokenId ID of the social media NFT
+     * @param price Sale price in wei (determined off-chain)
+     * @param socialMediaId Social media identifier linked to the NFT
+     * @param signature Verification server signature for price and social media ID
+     */
+    function listSocialMediaNFT(
+        uint256 tokenId,
+        uint256 price,
+        string calldata socialMediaId,
+        bytes calldata signature
+    ) external nonReentrant whenNotPaused {
+        // Validate price
+        VertixUtils.validatePrice(price);
+
+        // Verify NFT is from VertixNFT and owned by sender
+        if (IERC721(address(nftContract)).ownerOf(tokenId) != msg.sender) revert VertixMarketplace__NotOwner();
+
+        // Verify social media ID is linked to the NFT
+        if (!nftContract.getUsedSocialMediaIds(socialMediaId)) revert VertixMarketplace__InvalidSocialMediaNFT();
+
+        // Verify off-chain price with signature from verificationServer
+        address verificationServer = IVertixGovernance(governanceContract).getVerificationServer();
+        bytes32 messageHash = keccak256(abi.encodePacked(msg.sender, tokenId, price, socialMediaId));
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        address recoveredSigner = ECDSA.recover(ethSignedHash, signature);
+        if (recoveredSigner != verificationServer) revert VertixMarketplace__InvalidSignature();
+
+        // Check for duplicate listing
+        bytes32 listingHash = keccak256(abi.encodePacked(address(nftContract), tokenId));
+        if (_listingHashes[listingHash]) revert VertixMarketplace__DuplicateListing();
+
+        // Transfer NFT to marketplace
+        IERC721(address(nftContract)).transferFrom(msg.sender, address(this), tokenId);
+
+        // Create listing
+        uint256 listingId = _listingIdCounter++;
+        _nftListings[listingId] = NFTListing({
+            seller: msg.sender,
+            nftContract: address(nftContract),
+            tokenId: tokenId,
+            price: price,
+            active: true
+        });
+        _listingHashes[listingHash] = true;
+
+        emit NFTListed(listingId, msg.sender, address(nftContract), tokenId, price);
+    }
+
+    /**
+     * @dev Buy an NFT listing, paying royalties and platform fees
+     * @param listingId ID of the listing to purchase
+     */
+    /**
      * @dev Buy an NFT listing, paying royalties and platform fees
      * @param listingId ID of the listing to purchase
      */
@@ -291,16 +349,9 @@ contract VertixMarketplace is
         IERC721(listing.nftContract).transferFrom(address(this), msg.sender, listing.tokenId);
 
         // Transfer royalties, platform fee, and seller proceeds
-        if (royaltyAmount > 0) {
-            (bool royaltySuccess,) = payable(royaltyRecipient).call{value: royaltyAmount}("");
-            if (!royaltySuccess) revert VertixMarketplace__TransferFailed();
-        }
-        if (platformFee > 0) {
-            (bool feeSuccess,) = payable(feeRecipient).call{value: platformFee}("");
-            if (!feeSuccess) revert VertixMarketplace__TransferFailed();
-        }
-        (bool sellerSuccess,) = payable(listing.seller).call{value: listing.price - totalDeduction}("");
-        if (!sellerSuccess) revert VertixMarketplace__TransferFailed();
+        _safeTransferETH(royaltyRecipient, royaltyAmount); // Refactored
+        _safeTransferETH(feeRecipient, platformFee);       // Refactored
+        _safeTransferETH(listing.seller, listing.price - totalDeduction); // Refactored
 
         // Refund excess payment
         _refundExcessPayment(msg.value, listing.price);
@@ -334,10 +385,7 @@ contract VertixMarketplace is
         delete _listingHashes[keccak256(abi.encodePacked(listing.seller, listing.assetId))];
 
         // Transfer platform fee
-        if (platformFee > 0) {
-            (bool feeSuccess,) = payable(feeRecipient).call{value: platformFee}("");
-            if (!feeSuccess) revert VertixMarketplace__TransferFailed();
-        }
+        _safeTransferETH(feeRecipient, platformFee); // Refactored
 
         // Transfer remaining funds to escrow
         uint256 escrowAmount = listing.price - platformFee;
@@ -514,6 +562,15 @@ contract VertixMarketplace is
             (bool success,) = msg.sender.call{value: paidAmount - requiredAmount}("");
             if (!success) revert VertixMarketplace__TransferFailed();
         }
+    }
+
+    /**
+     * @dev Internal helper for safe Ether transfers.
+     */
+    function _safeTransferETH(address recipient, uint256 amount) internal {
+        if (amount == 0) return;
+        (bool success,) = payable(recipient).call{value: amount}("");
+        if (!success) revert VertixMarketplace__TransferFailed();
     }
 
     // Upgrade authorization
