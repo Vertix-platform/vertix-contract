@@ -457,6 +457,7 @@ contract VertixEscrowTest is Test {
         vm.expectEmit(true, true, false, true);
         emit FundsReleased(LISTING_ID, buyer, AMOUNT);
 
+        vm.prank(buyer);
         escrow.refund(LISTING_ID);
 
         // Verify funds were returned
@@ -505,6 +506,19 @@ contract VertixEscrowTest is Test {
 
         // Try to refund
         vm.expectRevert(VertixEscrow.VertixEscrow__EscrowInDispute.selector);
+        escrow.refund(LISTING_ID);
+    }
+
+    function test_RevertIf_RefundIfNotBuyer() public {
+        vm.prank(buyer);
+        escrow.lockFunds{value: AMOUNT}(LISTING_ID, seller, buyer);
+
+        // Advance time past deadline
+        vm.warp(block.timestamp + 8 days);
+
+        // Try to refund as seller
+        vm.prank(seller);
+        vm.expectRevert(VertixEscrow.VertixEscrow__OnlyBuyerCanConfirm.selector);
         escrow.refund(LISTING_ID);
     }
 
