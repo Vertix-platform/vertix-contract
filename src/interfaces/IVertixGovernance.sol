@@ -36,10 +36,16 @@ interface IVertixGovernance {
 
     function setVerificationServer()  external;
 
+    function addSupportedNFTContract(address nftContract) external;
+
+    function removeSupportedNFTContract(address nftContract) external;
+
     // View functions
     function getFeeConfig() external view returns (uint16 feeBps, address recipient);
 
     function getContractAddresses() external view returns (address marketplace, address escrow);
 
     function getVerificationServer() external view returns (address);
+
+    function isSupportedNFTContract(address nftContract) external view returns (bool);
 }

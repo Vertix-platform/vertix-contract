@@ -457,6 +457,7 @@ contract VertixEscrowTest is Test {
         vm.expectEmit(true, true, false, true);
         emit FundsReleased(LISTING_ID, buyer, AMOUNT);
 
+        vm.prank(buyer);
         escrow.refund(LISTING_ID);
 
         // Verify funds were returned
