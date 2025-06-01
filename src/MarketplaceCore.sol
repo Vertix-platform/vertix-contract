@@ -213,22 +213,20 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         emit NFTListed(listingId, msg.sender, address(nftContractAddr), tokenId, price);
     }
 
-    /**
+        /**
      * @dev List an NFT for auction
      * @param listingId ID of the NFT
      * @param isNFT true if NFT and false if non-NFT
      */
     function listForAuction(
         uint256 listingId,
-        bool isNFT,
-        uint256 startingPrice,
-        uint24 duration
+        bool isNFT
     ) external nonReentrant whenNotPaused {
         if (isNFT) {
             (
                 address seller,
-                address nftContractAddr,
-                uint256 tokenId,
+                ,
+                ,
                 ,
                 bool active,
             ) = storageContract.getNFTListing(listingId);
@@ -243,10 +241,10 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
             (
                 address seller,
                 ,
-                uint8 assetType,
+                ,
                 bool active,
                 bool auctionListed,
-                string memory assetId,
+                ,
                 ,
             ) = storageContract.getNonNFTListing(listingId);
 

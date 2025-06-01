@@ -73,7 +73,7 @@ contract VertixNFTTest is Test {
 function setUp() public {
     // Create a wallet for verificationServer to get a valid private key
     (verificationServer, verificationServerPk) = makeAddrAndKey("verificationServer");
-    
+
     // Create test addresses
     address marketplace = makeAddr("marketplace");
     address escrow = makeAddr("escrow");

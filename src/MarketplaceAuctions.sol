@@ -32,6 +32,7 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
     error MA__NotSeller();
     error MA__NotListedForAuction();
     error MA__InvalidListing();
+    error MA__InsufficientPayment();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -135,7 +136,7 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
         uint24 maxDuration = storageContract.MAX_AUCTION_DURATION();
         if (duration < minDuration || duration > maxDuration) revert MA__InvalidDuration(duration);
 
-        VertixUtils.validatePrice(startingPrice);
+        if (startingPrice == 0) revert MA__InsufficientPayment();
 
         uint256 auctionId = storageContract.createAuction(
             seller,
@@ -181,7 +182,7 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
         uint24 maxDuration = storageContract.MAX_AUCTION_DURATION();
         if (duration < minDuration || duration > maxDuration) revert MA__InvalidDuration(duration);
 
-        VertixUtils.validatePrice(startingPrice);
+        if (startingPrice == 0) revert MA__InsufficientPayment();
 
         uint256 auctionId = storageContract.createAuction(
             seller,
