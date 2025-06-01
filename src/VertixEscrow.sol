@@ -174,7 +174,6 @@ contract VertixEscrow is
         if (block.timestamp <= escrow.deadline) revert VertixEscrow__DeadlineNotPassed();
         if (escrow.completed) revert VertixEscrow__EscrowAlreadyCompleted();
         if (escrow.disputed) revert VertixEscrow__EscrowInDispute();
-        if (msg.sender != escrow.buyer) revert VertixEscrow__OnlyBuyerCanConfirm();
 
         escrow.completed = true;
         uint256 amount = escrow.amount;

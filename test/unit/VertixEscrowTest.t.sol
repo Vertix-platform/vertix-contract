@@ -509,19 +509,6 @@ contract VertixEscrowTest is Test {
         escrow.refund(LISTING_ID);
     }
 
-    function test_RevertIf_RefundIfNotBuyer() public {
-        vm.prank(buyer);
-        escrow.lockFunds{value: AMOUNT}(LISTING_ID, seller, buyer);
-
-        // Advance time past deadline
-        vm.warp(block.timestamp + 8 days);
-
-        // Try to refund as seller
-        vm.prank(seller);
-        vm.expectRevert(VertixEscrow.VertixEscrow__OnlyBuyerCanConfirm.selector);
-        escrow.refund(LISTING_ID);
-    }
-
     function test_RevertIf_RefundWhenPaused() public {
         vm.prank(buyer);
         escrow.lockFunds{value: AMOUNT}(LISTING_ID, seller, buyer);

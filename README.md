@@ -81,17 +81,9 @@ cast call <contract-address> "<function-signature>" --rpc-url $POLYGON_RPC_URL
 ```
 
 ## Contract Structure
-- **VertixMarketplace.sol**: Core marketplace for minting, trading, borrowing, and staking NFTs.
+- **Marketplace.sol**: Core marketplace for minting, trading, borrowing, and staking NFTs.
 
-- **VertixEscrow.sol**: Manages secure escrow for manual asset transfers.
-
-- **AssetVerifier.sol**: Handles asset authenticity verification.
-
-#### Coming soon
-
-> - **AssetRegistry.sol**: Tracks registered digital assets (NFTs, accounts, domains, apps).
-
-> - **PaymentSplitter.sol**: Distributes fees and royalties to creators, platform, and other stakeholders.
+- **Escrow.sol**: Manages secure escrow for manual asset transfers.
 
 
 ## Testing

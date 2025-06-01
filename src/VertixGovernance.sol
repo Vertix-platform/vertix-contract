@@ -15,6 +15,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     error VertixGovernance__InvalidFee();
     error VertixGovernance__ZeroAddress();
     error VertixGovernance__SameValue();
+    error VertixGovernance__InvalidNFTContract();
 
     // Type declarations
     struct FeeConfig {
@@ -35,6 +36,8 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     FeeConfig private _feeConfig;
     ContractAddresses public contracts;
     address public verificationServer;
+    mapping(address => bool) public supportedNFTContracts;
+
 
     // Events
     event PlatformFeeUpdated(uint16 oldFee, uint16 newFee);
@@ -42,6 +45,8 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     event MarketplaceUpdated(address newMarketplace);
     event EscrowUpdated(address newEscrow);
     event VerificationServerUpdated(address newServer);
+    event SupportedNFTContractAdded(address indexed nftContract);
+    event SupportedNFTContractRemoved(address indexed nftContract);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -127,6 +132,27 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         emit VerificationServerUpdated(newServer);
     }
 
+    /**
+     * @dev Add supported NFT contract (external contracts)
+     * @param nftContract Address of the NFT contract
+     */
+
+    function addSupportedNFTContract(address nftContract) external onlyOwner {
+        if (nftContract == address(0)) revert VertixGovernance__ZeroAddress();
+        supportedNFTContracts[nftContract] = true;
+        emit SupportedNFTContractAdded(nftContract);
+    }
+
+    /**
+     * @dev Remove supported NFT contract
+     * @param nftContract Address of the NFT contract
+     */
+    function removeSupportedNFTContract(address nftContract) external onlyOwner {
+        if (!supportedNFTContracts[nftContract]) revert VertixGovernance__InvalidNFTContract();
+        supportedNFTContracts[nftContract] = false;
+        emit SupportedNFTContractRemoved(nftContract);
+    }
+
 
     // View functions
     /**
@@ -154,4 +180,14 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     function getVerificationServer() external view returns (address) {
         return verificationServer;
     }
+
+    /**
+     * @dev Check if an NFT contract is supported
+     * @param nftContract Address of the NFT contract
+     * @return True if supported, false otherwise
+     */
+    function isSupportedNFTContract(address nftContract) external view returns (bool) {
+        return supportedNFTContracts[nftContract];
+    }
+
 }
