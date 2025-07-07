@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity 0.8.25;
 
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -11,28 +11,13 @@ import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 import {IVertixEscrow} from "./interfaces/IVertixEscrow.sol";
 import {MarketplaceStorage} from "./MarketplaceStorage.sol";
 import {MarketplaceFees} from "./MarketplaceFees.sol";
+import {IMarketplaceAuctions} from "./interfaces/IMarketplaceAuctions.sol";
 
 /**
  * @title MarketplaceAuctions
- * @dev Handles all auction-related functionality with gas-optimized operations
+ * @dev Handles all auction-related functionality
  */
-contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable {
-
-    /*//////////////////////////////////////////////////////////////
-                                 ERRORS
-    //////////////////////////////////////////////////////////////*/
-    error MA__InvalidDuration(uint24 duration);
-    error MA__AlreadyListedForAuction();
-    error MA__AuctionExpired();
-    error MA__BidTooLow(uint256 bidAmount);
-    error MA__AuctionInactive();
-    error MA__InsufficientBalance();
-    error MA__AuctionOngoing(uint256 timestamp);
-    error MA__TransferFailed();
-    error MA__NotSeller();
-    error MA__NotListedForAuction();
-    error MA__InvalidListing();
-    error MA__InsufficientPayment();
+contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable, IMarketplaceAuctions {
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -42,44 +27,6 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
     IVertixGovernance public immutable governanceContract;
     IVertixEscrow public immutable escrowContract;
 
-    /*//////////////////////////////////////////////////////////////
-                                 EVENTS
-    //////////////////////////////////////////////////////////////*/
-    event NFTAuctionStarted(
-        uint256 indexed auctionId,
-        address indexed seller,
-        uint256 startTime,
-        uint24 duration,
-        uint256 price,
-        address nftContract,
-        uint256 tokenId
-    );
-
-    event NonNFTAuctionStarted(
-        uint256 indexed auctionId,
-        address indexed seller,
-        uint256 startTime,
-        uint24 duration,
-        uint256 price,
-        string assetId,
-        uint8 assetType
-    );
-
-    event BidPlaced(
-        uint256 indexed auctionId,
-        uint256 indexed bidId,
-        address indexed bidder,
-        uint256 bidAmount,
-        uint256 tokenId
-    );
-
-    event AuctionEnded(
-        uint256 indexed auctionId,
-        address indexed seller,
-        address indexed bidder,
-        uint256 highestBid,
-        uint256 tokenId
-    );
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
@@ -94,8 +41,6 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
         governanceContract = IVertixGovernance(_governanceContract);
         escrowContract = IVertixEscrow(_escrowContract);
         feesContract = MarketplaceFees(_feesContract);
-
-        _disableInitializers();
     }
 
     function initialize() external initializer {
@@ -203,106 +148,80 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
      * @param auctionId The auction to bid on
      */
     function placeBid(uint256 auctionId) external payable nonReentrant {
-        (
-            bool active,
-            ,
-            uint256 startTime,
-            uint24 duration,
-            ,
-            address currentHighestBidder,
-            uint256 currentHighestBid,
-            uint256 tokenIdOrListingId,
-            uint256 startingPrice,
-            ,
-            ,
-        ) = storageContract.getAuctionDetails(auctionId);
+        MarketplaceStorage.AuctionDetailsView memory auction = storageContract.getAuctionDetailsView(auctionId);
 
-        if (!active) revert MA__AuctionInactive();
+        if (!auction.active) revert MA__AuctionInactive();
 
         uint256 endTime;
         unchecked {
-            endTime = startTime + duration; // duration is bounded by MAX_AUCTION_DURATION
+            endTime = auction.startTime + auction.duration; // duration is bounded by MAX_AUCTION_DURATION
         }
         if (block.timestamp > endTime) revert MA__AuctionExpired();
 
         (uint256 platformFeeBps, ) = governanceContract.getFeeConfig();
         uint256 minBid;
         unchecked {
-            minBid = (startingPrice * platformFeeBps) / 10000;
+            minBid = (auction.startingPrice * platformFeeBps) / 10000;
         }
 
-        if (msg.value < startingPrice || msg.value <= currentHighestBid || msg.value < minBid) {
+        if (msg.value < auction.startingPrice || msg.value <= auction.highestBid || msg.value < minBid) {
             revert MA__BidTooLow(msg.value);
         }
 
+        // Update auction with new highest bid BEFORE refunding previous bidder
+        storageContract.updateAuctionBid(auctionId, msg.sender, uint96(msg.value));
+
         // Refund previous highest bidder if exists
-        if (currentHighestBid > 0) {
+        if (auction.highestBid > 0) {
             uint256 contractBalance = address(this).balance;
             unchecked {
-                if (contractBalance - msg.value < currentHighestBid) {
+                if (contractBalance - msg.value < auction.highestBid) {
                     revert MA__InsufficientBalance();
                 }
             }
-            (bool success, ) = payable(currentHighestBidder).call{value: currentHighestBid}("");
+            (bool success, ) = payable(auction.highestBidder).call{value: auction.highestBid}("");
             if (!success) {
                 revert MA__TransferFailed();
             }
         }
 
-        // Update auction with new highest bid
-        storageContract.updateAuctionBid(auctionId, msg.sender, msg.value);
-
         uint256 bidId = storageContract.getBidsCount(auctionId) - 1; // Just added, so -1 for current bid
-        emit BidPlaced(auctionId, bidId, msg.sender, msg.value, tokenIdOrListingId);
+        emit BidPlaced(auctionId, bidId, msg.sender, msg.value, auction.tokenIdOrListingId);
     }
 
     /**
      * @dev End auction and distribute funds/assets - gas optimized
      * @param auctionId The auction to end
      */
-    function endAuction(uint256 auctionId) external nonReentrant whenNotPaused {
-        (
-            bool active,
-            bool isNFT,
-            uint256 startTime,
-            uint24 duration,
-            address seller,
-            address highestBidder,
-            uint256 highestBid,
-            uint256 tokenIdOrListingId,
-            ,
-            address nftContractAddr,
-            ,
-        ) = storageContract.getAuctionDetails(auctionId);
+function endAuction(uint256 auctionId) external nonReentrant whenNotPaused {
+    MarketplaceStorage.AuctionDetailsView memory auction = storageContract.getAuctionDetailsView(auctionId);
 
-        if (seller != msg.sender) revert MA__NotSeller();
-        if (!active) revert MA__AuctionInactive();
+    if (auction.seller != msg.sender) revert MA__NotSeller();
+    if (!auction.active) revert MA__AuctionInactive();
 
-        uint256 endTime;
-        unchecked {
-            endTime = startTime + duration;
-        }
-        if (block.timestamp < endTime) {
-            revert MA__AuctionOngoing(block.timestamp);
-        }
-
-        // Mark auction as ended
-        storageContract.endAuction(auctionId);
-
-        // Distribute funds via MarketplaceFees
-        if (highestBidder != address(0)) {
-            feesContract.processAuctionPayment{value: highestBid}(
-                highestBid,
-                seller,
-                nftContractAddr,
-                tokenIdOrListingId,
-                isNFT,
-                auctionId
-            );
-        }
-
-        emit AuctionEnded(auctionId, seller, highestBidder, highestBid, tokenIdOrListingId);
+    uint256 endTime;
+    unchecked {
+        endTime = auction.startTime + auction.duration;
     }
+    if (block.timestamp < endTime) {
+        revert MA__AuctionOngoing(block.timestamp);
+    }
+
+    storageContract.endAuction(auctionId);
+
+    if (auction.highestBidder != address(0)) {
+        feesContract.processAuctionPayment{value: auction.highestBid}(
+            auction.highestBid,
+            auction.seller,
+            auction.nftContractAddr,
+            auction.tokenIdOrListingId,
+            auction.isNFT,
+            auctionId
+        );
+    }
+
+    emit AuctionEnded(auctionId, auction.seller, auction.highestBidder, auction.highestBid, auction.tokenIdOrListingId);
+}
 
 
     /*//////////////////////////////////////////////////////////////
@@ -323,34 +242,33 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
         uint256 highestBid,
         uint256 startingPrice
     ) {
-        (
-            active,
-            isNFT,
-            startTime,
-            duration,
-            seller,
-            highestBidder,
-            highestBid,
-            ,
-            startingPrice,
-            ,
-            ,
-        ) = storageContract.getAuctionDetails(auctionId);
+        MarketplaceStorage.AuctionDetailsView memory auction = storageContract.getAuctionDetailsView(auctionId);
 
         unchecked {
-            endTime = startTime + duration;
+            endTime = auction.startTime + auction.duration;
         }
+
+        return (
+            auction.active,
+            auction.isNFT,
+            auction.startTime,
+            auction.duration,
+            endTime,
+            auction.seller,
+            auction.highestBidder,
+            auction.highestBid,
+            auction.startingPrice
+        );
     }
 
     /**
      * @dev Check if auction has expired
      */
     function isAuctionExpired(uint256 auctionId) external view returns (bool) {
-        (, , uint256 startTime, uint24 duration, , , , , , , , ) = 
-            storageContract.getAuctionDetails(auctionId);
+        MarketplaceStorage.AuctionDetailsView memory auction = storageContract.getAuctionDetailsView(auctionId);
 
         unchecked {
-            return block.timestamp > startTime + duration;
+            return block.timestamp > auction.startTime + auction.duration;
         }
     }
 
@@ -358,12 +276,11 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
      * @dev Get time remaining in auction
      */
     function getTimeRemaining(uint256 auctionId) external view returns (uint256) {
-        (, , uint256 startTime, uint24 duration, , , , , , , , ) =
-            storageContract.getAuctionDetails(auctionId);
+        MarketplaceStorage.AuctionDetailsView memory auction = storageContract.getAuctionDetailsView(auctionId);
 
         uint256 endTime;
         unchecked {
-            endTime = startTime + duration;
+            endTime = auction.startTime + auction.duration;
         }
 
         if (block.timestamp >= endTime) return 0;

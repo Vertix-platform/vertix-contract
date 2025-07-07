@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity 0.8.25;
 
 import {VertixUtils} from "./libraries/VertixUtils.sol";
 import {IVertixNFT} from "./interfaces/IVertixNFT.sol";
+import {IMarketplaceStorage} from "./interfaces/IMarketplaceStorage.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title MarketplaceStorage
  * @dev Centralized storage contract for all marketplace data
  */
-contract MarketplaceStorage {
+contract MarketplaceStorage is ReentrancyGuard, IMarketplaceStorage {
 
     /*//////////////////////////////////////////////////////////////
                     STRUCTS
@@ -53,6 +55,41 @@ contract MarketplaceStorage {
         address bidder;
     }
 
+    struct TokenListing {
+        address seller;
+        address tokenContract;
+        uint256 tokenId;
+        uint256 quantity;
+        uint96 pricePerToken;
+        uint8 flags;             // 1 byte: bit 0=active, bit 1=listedForAuction
+    }
+
+    struct TokenListingView {
+        address seller;
+        address tokenContract;
+        uint256 tokenId;
+        uint256 quantity;
+        uint96 pricePerToken;
+        bool active;
+        bool auctionListed;
+    }
+
+    struct AuctionDetailsView {
+        bool active;
+        bool isNFT;
+        uint256 startTime;
+        uint24 duration;
+        address seller;
+        address highestBidder;
+        uint256 highestBid;
+        uint256 tokenIdOrListingId;
+        uint256 startingPrice;
+        address nftContractAddr;
+        uint8 assetType;
+        string assetId;
+    }
+
+
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -80,7 +117,12 @@ contract MarketplaceStorage {
 
     // Access control
     mapping(address => bool) public authorizedContracts;
-    address public owner;
+    address public immutable owner;
+
+    // Additional state variables for ERC-1155
+    mapping(uint256 => TokenListing) public tokenListings;
+    mapping(address => mapping(uint256 => uint256)) public userTokenBalances;
+    mapping(uint256 => mapping(address => uint256)) public escrowedTokens;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -88,20 +130,56 @@ contract MarketplaceStorage {
 
     event ContractAuthorized(address indexed contractAddr, bool authorized);
 
+    event TokenListingCreated(
+        uint256 indexed listingId,
+        address indexed seller,
+        address tokenContract,
+        uint256 indexed tokenId,
+        uint256 quantity,
+        uint96 pricePerToken
+    );
+
+    event TokenListingUpdated(
+        uint256 indexed listingId,
+        uint256 newQuantity,
+        bool active
+    );
+
+    // Additional events for batch operations
+    event BatchTokenListingCreated(
+        uint256[] listingIds,
+        address indexed seller,
+        address tokenContract,
+        uint256[] tokenIds,
+        uint256[] quantities,
+        uint96[] pricesPerToken
+    );
+
+    event BatchTokenListingUpdated(
+        uint256[] listingIds,
+        uint256[] newQuantities,
+        bool[] active
+    );
+    event ContractsSet(
+        address indexed vertixNFTContract,
+        address indexed governanceContract,
+        address indexed escrowContract
+    );
+
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyAuthorized() {
         if(!authorizedContracts[msg.sender]) {
-            revert("MStorage: Not authorized");
+            revert MarketplaceStorage__NotAuthorized();
         }
         _;
     }
 
     modifier onlyOwner() {
         if (msg.sender != owner) {
-            revert("MStorage: Not owner");
+            revert MarketplaceStorage__NotOwner();
         }
         _;
     }
@@ -132,6 +210,11 @@ contract MarketplaceStorage {
         vertixNFTContract = IVertixNFT(_vertixNFTContract);
         governanceContract = _governanceContract;
         escrowContract = _escrowContract;
+        emit ContractsSet(
+            _vertixNFTContract,
+            _governanceContract,
+            _escrowContract
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -285,15 +368,15 @@ contract MarketplaceStorage {
     function updateAuctionBid(
         uint256 auctionId,
         address bidder,
-        uint256 bidAmount
-    ) external onlyAuthorized {
+        uint96 bidAmount
+    ) external onlyAuthorized nonReentrant {
         AuctionDetails storage auction = auctionListings[auctionId];
         auction.highestBidder = bidder;
-        auction.highestBid = uint96(bidAmount);
+        auction.highestBid = bidAmount;
 
         uint32 bidId = uint32(bidsPlaced[auctionId].length);
         bidsPlaced[auctionId].push(Bid({
-            bidAmount: uint96(bidAmount),
+            bidAmount: bidAmount,
             bidId: bidId,
             bidder: bidder
         }));
@@ -309,35 +392,22 @@ contract MarketplaceStorage {
         delete tokenOrListingIdForAuction[auctionId];
     }
 
-    function getAuctionDetails(uint256 auctionId) external view returns (
-        bool active,
-        bool isNFT,
-        uint256 startTime,
-        uint24 duration,
-        address seller,
-        address highestBidder,
-        uint256 highestBid,
-        uint256 tokenIdOrListingId,
-        uint256 startingPrice,
-        address nftContractAddr,
-        uint8 assetType,
-        string memory assetId
-    ) {
+    function getAuctionDetailsView(uint256 auctionId) external view returns (AuctionDetailsView memory) {
         AuctionDetails memory auction = auctionListings[auctionId];
-        return (
-            (auction.flags & 1) == 1,
-            (auction.flags & 2) == 2,
-            uint256(auction.startTime),
-            auction.duration,
-            auction.seller,
-            auction.highestBidder,
-            uint256(auction.highestBid),
-            auction.tokenIdOrListingId,
-            uint256(auction.startingPrice),
-            address(auction.nftContract),
-            uint8(auction.assetType),
-            auction.assetId
-        );
+        return AuctionDetailsView({
+            active: (auction.flags & 1) == 1,
+            isNFT: (auction.flags & 2) == 2,
+            startTime: auction.startTime,
+            duration: auction.duration,
+            seller: auction.seller,
+            highestBidder: auction.highestBidder,
+            highestBid: auction.highestBid,
+            tokenIdOrListingId: auction.tokenIdOrListingId,
+            startingPrice: auction.startingPrice,
+            nftContractAddr: auction.nftContract,
+            assetType: uint8(auction.assetType),
+            assetId: auction.assetId
+        });
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -362,5 +432,236 @@ contract MarketplaceStorage {
     ) {
         Bid memory bid = bidsPlaced[auctionId][bidIndex];
         return (uint256(bid.bidAmount), bid.bidId, bid.bidder);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        AUCTION LISTING FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev List an NFT or non-NFT for auction
+     * @param listingId ID of the listing
+     * @param isNFT true if NFT and false if non-NFT
+     * @param seller Address of the seller
+     */
+    function listForAuction(
+        uint256 listingId,
+        bool isNFT,
+        address seller
+    ) external onlyAuthorized {
+        if (isNFT) {
+            NFTListing storage listing = nftListings[listingId];
+                    if ((listing.flags & 1) != 1) revert MarketplaceStorage__ListingNotActive();
+        if (listing.seller != seller) revert MarketplaceStorage__NotSeller();
+        if (listedForAuction[listingId]) revert MarketplaceStorage__AlreadyListedForAuction();
+
+            listing.flags |= 2; // Set auction listed bit
+        } else {
+            NonNFTListing storage listing = nonNFTListings[listingId];
+            if ((listing.flags & 1) != 1) revert MarketplaceStorage__ListingNotActive();
+            if (listing.seller != seller) revert MarketplaceStorage__NotSeller();
+            if ((listing.flags & 2) != 0) revert MarketplaceStorage__AlreadyListedForAuction();
+
+            listing.flags |= 2; // Set auction listed bit
+        }
+
+        // Mark as listed for auction
+        listedForAuction[listingId] = true;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    CROSS-CHAIN PURCHASE EXECUTION
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Execute cross-chain NFT purchase (storage updates only)
+     * @param listingId ID of the listing
+     * @param price Purchase price for validation
+     * @return nftContract Address of the NFT contract
+     * @return tokenId ID of the NFT
+     * @return listingPrice Original listing price
+     */
+    function executeCrossChainNFTPurchase(
+        uint256 listingId,
+        uint96 price
+    ) external onlyAuthorized returns (
+        address nftContract,
+        uint256 tokenId,
+        uint96 listingPrice
+    ) {
+        NFTListing storage listing = nftListings[listingId];
+
+        if ((listing.flags & 1) != 1) revert MarketplaceStorage__ListingNotActive();
+        if (price < listing.price) revert MarketplaceStorage__InsufficientPrice();
+
+        // Mark listing as sold
+        listing.flags = 0; // Set inactive
+
+        // Return values for caller
+        nftContract = listing.nftContract;
+        tokenId = listing.tokenId;
+        listingPrice = listing.price;
+
+        // Remove listing hash
+        bytes32 hash = keccak256(abi.encodePacked(nftContract, tokenId));
+        listingHashes[hash] = false;
+    }
+
+    /**
+     * @dev Execute cross-chain non-NFT purchase (storage updates only)
+     * @param listingId ID of the listing
+     * @param price Purchase price for validation
+     * @return seller Address of the seller
+     * @return assetType Type of the asset
+     * @return assetId ID of the asset
+     * @return listingPrice Original listing price
+     */
+    function executeCrossChainNonNFTPurchase(
+        uint256 listingId,
+        uint96 price
+    ) external onlyAuthorized returns (
+        address seller,
+        uint8 assetType,
+        string memory assetId,
+        uint96 listingPrice
+    ) {
+        NonNFTListing storage listing = nonNFTListings[listingId];
+
+        if ((listing.flags & 1) != 1) revert MarketplaceStorage__ListingNotActive();
+        if (price < listing.price) revert MarketplaceStorage__InsufficientPrice();
+
+        // Mark listing as sold
+        listing.flags = 0; // Set inactive
+
+        // Return values for caller
+        seller = listing.seller;
+        assetType = listing.assetType;
+        assetId = listing.assetId;
+        listingPrice = listing.price;
+
+        // Remove listing hash
+        bytes32 hash = keccak256(abi.encodePacked(seller, assetId));
+        listingHashes[hash] = false;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            TOKEN LISTINGS
+    //////////////////////////////////////////////////////////////*/
+
+    function createTokenListing(
+        address seller,
+        address tokenContract,
+        uint256 tokenId,
+        uint256 quantity,
+        uint96 pricePerToken
+    ) external onlyAuthorized returns (uint256 listingId) {
+        listingId = listingIdCounter++;
+
+        tokenListings[listingId] = TokenListing({
+            seller: seller,
+            tokenContract: tokenContract,
+            tokenId: tokenId,
+            quantity: quantity,
+            pricePerToken: pricePerToken,
+            flags: 1 // active = true
+        });
+
+        bytes32 hash = keccak256(abi.encodePacked(tokenContract, tokenId, seller));
+        listingHashes[hash] = true;
+
+        emit TokenListingCreated(listingId, seller, tokenContract, tokenId, quantity, pricePerToken);
+    }
+
+    function updateTokenListing(uint256 listingId, uint256 newQuantity) external onlyAuthorized {
+        TokenListing storage listing = tokenListings[listingId];
+        listing.quantity = newQuantity;
+
+        if (newQuantity == 0) {
+            listing.flags = 0; // Set inactive
+        }
+
+        emit TokenListingUpdated(listingId, newQuantity, newQuantity > 0);
+    }
+
+    function getTokenListing(uint256 listingId) external view returns (TokenListingView memory) {
+        TokenListing memory listing = tokenListings[listingId];
+        return TokenListingView({
+            seller: listing.seller,
+            tokenContract: listing.tokenContract,
+            tokenId: listing.tokenId,
+            quantity: listing.quantity,
+            pricePerToken: listing.pricePerToken,
+            active: (listing.flags & 1) == 1,
+            auctionListed: (listing.flags & 2) == 2
+        });
+    }
+
+
+
+    function removeTokenListingHash(address tokenContract, uint256 tokenId, address seller) external onlyAuthorized {
+        bytes32 hash = keccak256(abi.encodePacked(tokenContract, tokenId, seller));
+        listingHashes[hash] = false;
+    }
+
+    /**
+     * @dev Create multiple token listings in a single transaction
+     */
+    function createBatchTokenListing(
+        address seller,
+        address tokenContract,
+        uint256[] calldata tokenIds,
+        uint256[] calldata quantities,
+        uint96[] calldata pricesPerToken
+    ) external onlyAuthorized returns (uint256[] memory listingIds) {
+        uint256 batchSize = tokenIds.length;
+        if (batchSize != quantities.length || batchSize != pricesPerToken.length) {
+            revert MarketplaceStorage__ArrayLengthMismatch();
+        }
+
+        listingIds = new uint256[](batchSize);
+
+        for (uint256 i = 0; i < batchSize; i++) {
+            listingIds[i] = listingIdCounter++;
+
+            tokenListings[listingIds[i]] = TokenListing({
+                seller: seller,
+                tokenContract: tokenContract,
+                tokenId: tokenIds[i],
+                quantity: quantities[i],
+                pricePerToken: pricesPerToken[i],
+                flags: 1 // active = true
+            });
+        }
+
+        emit BatchTokenListingCreated(
+            listingIds,
+            seller,
+            tokenContract,
+            tokenIds,
+            quantities,
+            pricesPerToken
+        );
+    }
+
+    /**
+     * @dev Update multiple token listings in a single transaction
+     */
+    function updateBatchTokenListing(
+        uint256[] calldata listingIds,
+        uint256[] calldata newQuantities
+    ) external onlyAuthorized {
+        if (listingIds.length != newQuantities.length) {
+            revert MarketplaceStorage__ArrayLengthMismatch();
+        }
+        
+        bool[] memory activeFlags = new bool[](listingIds.length);
+
+        for (uint256 i = 0; i < listingIds.length; i++) {
+            tokenListings[listingIds[i]].quantity = newQuantities[i];
+            activeFlags[i] = newQuantities[i] > 0;
+            tokenListings[listingIds[i]].flags = activeFlags[i] ? 1 : 0;
+        }
+
+        emit BatchTokenListingUpdated(listingIds, newQuantities, activeFlags);
     }
 }

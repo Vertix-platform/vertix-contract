@@ -8,7 +8,8 @@ remappings = [
     '@openzeppelin/contracts-upgradeable=lib/openzeppelin-contracts-upgradeable/contracts',
     '@safe-contracts/contracts=lib/safe-contracts/contracts',
     '@chainlink/contracts=lib/chainlink/contracts',
-    ]
+    '@layerzero-contracts/=lib/solidity-examples/contracts/',
+]
 
 fs_permissions = [
     { access = "read", path = "./broadcast" },
