@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity 0.8.26;
 
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -31,7 +31,6 @@ contract VertixEscrow is
     error VertixEscrow__DeadlineNotPassed();
     error VertixEscrow__ZeroAddress();
     error VertixEscrow__InvalidDuration();
-    error VertixEscrow__TransferFailed();
 
     struct Escrow {
         address seller;
@@ -126,7 +125,7 @@ contract VertixEscrow is
         delete escrows[listingId];
 
         (bool success,) = seller.call{value: amount}("");
-        if (!success) revert VertixEscrow__TransferFailed();
+        require(success, "Transfer failed");
     }
 
     /**
@@ -162,7 +161,7 @@ contract VertixEscrow is
         delete escrows[listingId];
 
         (bool success,) = winner.call{value: amount}("");
-        if (!success) revert VertixEscrow__TransferFailed();
+        require(success, "Transfer failed");
     }
 
     /**
@@ -184,7 +183,7 @@ contract VertixEscrow is
         delete escrows[listingId];
 
         (bool success,) = buyer.call{value: amount}("");
-        if (!success) revert VertixEscrow__TransferFailed();
+        require(success, "Transfer failed");
     }
 
     function setEscrowDuration(uint32 newDuration) external onlyOwner {

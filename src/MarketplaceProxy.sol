@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity 0.8.26;
 
 /**
  * @title MarketplaceProxy
@@ -7,14 +7,6 @@ pragma solidity 0.8.25;
  * forward calls to the core and auction logic contracts.
  */
 contract MarketplaceProxy {
-    /*//////////////////////////////////////////////////////////////
-    *                           ERRORS
-    //////////////////////////////////////////////////////////////*/
-
-    error MarketplaceProxy__InvalidCoreAddress();
-    error MarketplaceProxy__InvalidAuctionsAddress();
-    error MarketplaceProxy__CallFailed();
-
     /*//////////////////////////////////////////////////////////////
     *                           STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -26,8 +18,8 @@ contract MarketplaceProxy {
     //////////////////////////////////////////////////////////////*/
 
     constructor(address _marketplaceCoreAddress, address _marketplaceAuctionsAddress) {
-        if (_marketplaceCoreAddress == address(0)) revert MarketplaceProxy__InvalidCoreAddress();
-        if (_marketplaceAuctionsAddress == address(0)) revert MarketplaceProxy__InvalidAuctionsAddress();
+        require(_marketplaceCoreAddress != address(0), "MP__InvalidCoreAddress");
+        require(_marketplaceAuctionsAddress != address(0), "MP__InvalidAuctionsAddress");
 
         marketplaceCoreAddress = _marketplaceCoreAddress;
         marketplaceAuctionsAddress = _marketplaceAuctionsAddress;
@@ -84,10 +76,10 @@ contract MarketplaceProxy {
         // The actual access control logic (e.g., owner check) is handled by
         // the target implementation contract (MarketplaceCore) during the delegatecall.
         // This function merely provides an entry point for the delegatecall.
-        (bool success,) = marketplaceCoreAddress.delegatecall(
+        (bool success, bytes memory returndata) = marketplaceCoreAddress.delegatecall(
             abi.encodeWithSelector(this.updateMarketplaceCoreAddress.selector, _newMarketplaceCoreAddress)
         );
-        if (!success) revert MarketplaceProxy__CallFailed();
+        require(success, string(returndata));
     }
 
     /**
@@ -97,9 +89,9 @@ contract MarketplaceProxy {
      */
     function updateMarketplaceAuctionsAddress(address _newMarketplaceAuctionsAddress) external {
         // The actual access control logic is handled by the target implementation contract.
-        (bool success,) = marketplaceCoreAddress.delegatecall(
+        (bool success, bytes memory returndata) = marketplaceCoreAddress.delegatecall(
             abi.encodeWithSelector(this.updateMarketplaceAuctionsAddress.selector, _newMarketplaceAuctionsAddress)
         );
-        if (!success) revert MarketplaceProxy__CallFailed();
+        require(success, string(returndata));
     }
 }

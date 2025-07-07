@@ -1,17 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity 0.8.26;
 
 /**
  * @title IVertixEscrow
  * @dev Interface for the VertixEscrow contract
  */
 interface IVertixEscrow {
-    /*//////////////////////////////////////////////////////////////
-                                ERRORS
-    //////////////////////////////////////////////////////////////*/
-    
-    error VertixEscrow__TransferFailed();
-    
     // Structs
     struct Escrow {
         address seller;

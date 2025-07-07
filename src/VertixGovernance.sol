@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity 0.8.26;
 
 // Imports
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -37,7 +37,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     ContractAddresses public contracts;
     address public verificationServer;
     mapping(address => bool) public supportedNFTContracts;
-    mapping(address => bool) public supportedTokenContracts;
+
 
     // Events
     event PlatformFeeUpdated(uint16 oldFee, uint16 newFee);
@@ -47,8 +47,6 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     event VerificationServerUpdated(address newServer);
     event SupportedNFTContractAdded(address indexed nftContract);
     event SupportedNFTContractRemoved(address indexed nftContract);
-    event SupportedTokenContractAdded(address indexed tokenContract);
-    event SupportedTokenContractRemoved(address indexed tokenContract);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -155,37 +153,6 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
         emit SupportedNFTContractRemoved(nftContract);
     }
 
-    /**
-     * @dev Add supported ERC-1155 token contract
-     * @param tokenContract Address of the token contract
-     */
-    function addSupportedTokenContract(address tokenContract) external onlyOwner {
-        if (tokenContract == address(0)) revert VertixGovernance__ZeroAddress();
-        if (supportedTokenContracts[tokenContract]) revert VertixGovernance__SameValue();
-
-        supportedTokenContracts[tokenContract] = true;
-        emit SupportedTokenContractAdded(tokenContract);
-    }
-
-    /**
-     * @dev Remove supported ERC-1155 token contract
-     * @param tokenContract Address of the token contract
-     */
-    function removeSupportedTokenContract(address tokenContract) external onlyOwner {
-        if (!supportedTokenContracts[tokenContract]) revert VertixGovernance__InvalidNFTContract();
-
-        supportedTokenContracts[tokenContract] = false;
-        emit SupportedTokenContractRemoved(tokenContract);
-    }
-
-    /**
-     * @dev Check if a token contract is supported
-     * @param tokenContract Address of the token contract
-     * @return True if supported, false otherwise
-     */
-    function isSupportedTokenContract(address tokenContract) external view returns (bool) {
-        return supportedTokenContracts[tokenContract];
-    }
 
     // View functions
     /**

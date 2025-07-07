@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity 0.8.26;
 
 // Imports
 import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
@@ -12,7 +12,6 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
-import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 /**
  * @title VertixNFT
@@ -60,7 +59,6 @@ contract VertixNFT is
     mapping(uint256 => uint256) public tokenToCollection;
     mapping(uint256 => bytes32) public metadataHashes;
 
-
     // Events
     event CollectionCreated(
         uint256 indexed collectionId,
@@ -88,30 +86,6 @@ contract VertixNFT is
         address indexed royaltyRecipient,
         uint96 royaltyBps
     );
-    event TokensListed(
-        uint256 indexed listingId,
-        address indexed seller,
-        address tokenContract,
-        uint256 indexed tokenId,
-        uint256 quantity,
-        uint256 pricePerToken
-    );
-    event TokensBought(
-        uint256 indexed listingId,
-        address indexed buyer,
-        uint256 quantity,
-        uint256 totalPrice,
-        uint256 royaltyAmount,
-        address royaltyRecipient
-    );
-    event TokenAuctionStarted(
-        uint256 indexed auctionId,
-        address indexed seller,
-        uint256 tokenId,
-        uint256 quantity,
-        uint256 startingPrice
-    );
-
 
     // Constructor
     function initialize(address _verificationServer) public initializer {
@@ -232,8 +206,6 @@ contract VertixNFT is
         emit SocialMediaNFTMinted(to, tokenId, socialMediaId, uri, metadataHash, to, royaltyBps);
     }
 
-
-
     // Internal functions
     /**
      * @dev Internal mint function with common logic
@@ -277,6 +249,43 @@ contract VertixNFT is
     }
 
     // View functions
+    // /**
+    //  * @dev Get collection tokens
+    //  * @param collectionId Collection ID
+    //  */
+    // function getCollectionTokens(uint256 collectionId) external view returns (uint256[] memory) {
+    //     if (collections[collectionId].creator == address(0)) revert VertixNFT__InvalidCollection();
+    //     return collections[collectionId].tokenIds;
+    // }
+
+    // /**
+    //  * @dev Get collection details
+    //  * @param collectionId Collection ID
+    //  */
+    // function getCollectionDetails(uint256 collectionId)
+    //     external
+    //     view
+    //     returns (
+    //         address creator,
+    //         string memory name,
+    //         string memory symbol,
+    //         string memory image,
+    //         uint256 maxSupply,
+    //         uint256 currentSupply
+    //     )
+    // {
+    //     Collection memory collection = collections[collectionId];
+    //     if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
+
+    //     return (
+    //         collection.creator,
+    //         collection.name,
+    //         collection.symbol,
+    //         collection.image,
+    //         collection.maxSupply,
+    //         collection.currentSupply
+    //     );
+    // }
 
     function getUsedSocialMediaIds(string calldata socialMediaId) external view returns (bool) {
         return usedSocialMediaIds[socialMediaId];

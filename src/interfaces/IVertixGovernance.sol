@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity 0.8.26;
 
 /**
  * @title IVertixGovernance
@@ -48,6 +48,4 @@ interface IVertixGovernance {
     function getVerificationServer() external view returns (address);
 
     function isSupportedNFTContract(address nftContract) external view returns (bool);
-
-    function isSupportedTokenContract(address tokenContract) external view returns (bool);
 }

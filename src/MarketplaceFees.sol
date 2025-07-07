@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+pragma solidity 0.8.26;
 
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 import {IVertixEscrow} from "./interfaces/IVertixEscrow.sol";
-import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 /**
  * @title MarketplaceFees
  * @dev Handles all fee calculations and distributions for the marketplace
  */
-contract MarketplaceFees is ReentrancyGuardUpgradeable {
+contract MarketplaceFees {
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -20,7 +18,6 @@ contract MarketplaceFees is ReentrancyGuardUpgradeable {
     error MarketplaceFees__TransferFailed();
     error MarketplaceFees__InsufficientPayment();
     error MarketplaceFees__InvalidFeeConfig();
-    error MarketplaceFees__UnauthorizedRefund();
 
     /*//////////////////////////////////////////////////////////////
                                STRUCTS
@@ -47,7 +44,6 @@ contract MarketplaceFees is ReentrancyGuardUpgradeable {
         uint256 tokenId;
         address seller;
         bool hasRoyalties;
-        address tokenContract;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -167,44 +163,6 @@ contract MarketplaceFees is ReentrancyGuardUpgradeable {
         if (minimumBid < platformFee) {
             minimumBid = platformFee;
         }
-    }
-
-    /**
-     * @dev Calculate fees for ERC-1155 token sale
-     * @param price The total sale price of the token
-     * @param tokenContract The address of the token contract
-     * @param tokenId The ID of the token being sold
-     * @return FeeDistribution containing platform fee, royalty amount, seller amount, and recipients
-     */
-    function calculateTokenFees(
-        uint256 price,
-        address tokenContract,
-        uint256 tokenId
-    ) external view returns (FeeDistribution memory) {
-        (uint16 feeBps, address feeRecipient) = governanceContract.getFeeConfig();
-
-        uint256 platformFee = (price * feeBps) / 10000;
-        uint256 royaltyAmount = 0;
-        address royaltyRecipient = address(0);
-
-        // Try to get royalty info if contract supports ERC2981
-        try IERC2981(tokenContract).royaltyInfo(tokenId, price) returns (
-            address recipient,
-            uint256 amount
-        ) {
-            royaltyAmount = amount;
-            royaltyRecipient = recipient;
-        } catch {}
-
-        uint256 sellerAmount = price - platformFee - royaltyAmount;
-
-        return FeeDistribution({
-            platformFee: platformFee,
-            platformRecipient: feeRecipient,
-            royaltyAmount: royaltyAmount,
-            royaltyRecipient: royaltyRecipient,
-            sellerAmount: sellerAmount
-        });
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -379,57 +337,9 @@ contract MarketplaceFees is ReentrancyGuardUpgradeable {
      * @notice This function is called to refund any excess payment made by the buyer after fees have been deducted.
      */
     function refundExcessPayment(address buyer, uint256 excessAmount) external {
-        if (msg.sender != address(escrowContract) && msg.sender != address(this)) {
-            revert MarketplaceFees__UnauthorizedRefund();
-        }
         if (excessAmount > 0) {
             _safeTransferETH(buyer, excessAmount);
         }
-    }
-
-    /**
-     * @dev Process token sale payment with fee distribution
-     * @param config Payment configuration containing sale details
-     * @return refundAmount Amount to refund to buyer if overpaid
-     * @notice This function handles the payment for token sales, distributing fees to platform, royalty recipient, and seller.
-     */
-    function processTokenSalePayment(
-        PaymentConfig calldata config
-    ) external payable nonReentrant returns (uint256 refundAmount) {
-        if (msg.value < config.salePrice) revert MarketplaceFees__InsufficientPayment();
-
-        FeeDistribution memory fees = this.calculateTokenFees(
-            config.salePrice,
-            config.tokenContract,
-            config.tokenId
-        );
-
-        // Transfer platform fee
-        if (fees.platformFee > 0) {
-            _safeTransferETH(fees.platformRecipient, fees.platformFee);
-        }
-
-        // Transfer royalties if any
-        if (fees.royaltyAmount > 0) {
-            _safeTransferETH(fees.royaltyRecipient, fees.royaltyAmount);
-        }
-
-        // Transfer remaining amount to seller
-        if (fees.sellerAmount > 0) {
-            _safeTransferETH(config.seller, fees.sellerAmount);
-        }
-
-        // Calculate refund
-        refundAmount = config.totalPayment - config.salePrice;
-
-        emit FeesDistributed(
-            config.salePrice,
-            fees.platformFee,
-            fees.royaltyAmount,
-            fees.platformRecipient,
-            fees.royaltyRecipient,
-            config.seller
-        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -452,8 +362,6 @@ contract MarketplaceFees is ReentrancyGuardUpgradeable {
         }
     }
 
-
-
     /*//////////////////////////////////////////////////////////////
                            VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -472,24 +380,51 @@ contract MarketplaceFees is ReentrancyGuardUpgradeable {
      * @param salePrice The total sale price of the NFT
      * @param nftContract The address of the NFT contract
      * @param tokenId The ID of the NFT being sold
-     * @return fees Complete fee breakdown including platform fee, royalty, and seller amounts
+     * @return totalFees Total fees including platform fee and royalty amount
+     * @return platformFee The platform fee amount
+     * @return royaltyAmount The royalty amount for the NFT
+     * @return sellerReceives The amount the seller receives after fees
      * @notice This function allows users to preview the fees that will be applied to an NFT sale before proceeding with the transaction.
      */
     function previewNFTFees(
         uint256 salePrice,
         address nftContract,
         uint256 tokenId
-    ) external view returns (FeeDistribution memory fees) {
-        return this.calculateNFTFees(salePrice, nftContract, tokenId);
+    ) external view returns (
+        uint256 totalFees,
+        uint256 platformFee,
+        uint256 royaltyAmount,
+        uint256 sellerReceives
+    ) {
+        FeeDistribution memory fees = this.calculateNFTFees(salePrice, nftContract, tokenId);
+
+        return (
+            fees.platformFee + fees.royaltyAmount,
+            fees.platformFee,
+            fees.royaltyAmount,
+            fees.sellerAmount
+        );
     }
 
     /**
      * @dev Preview total fees for non-NFT sale
      * @param salePrice The total sale price of the item
-     * @return fees Complete fee breakdown including platform fee and seller amounts
+     * @return totalFees Total fees including platform fee
+     * @return platformFee The platform fee amount
+     * @return sellerReceives The amount the seller receives after fees
      * @notice This function allows users to preview the fees that will be applied to a non-NFT sale before proceeding with the transaction.
      */
-    function previewNonNFTFees(uint256 salePrice) external view returns (FeeDistribution memory fees) {
-        return this.calculateNonNFTFees(salePrice);
+    function previewNonNFTFees(uint256 salePrice) external view returns (
+        uint256 totalFees,
+        uint256 platformFee,
+        uint256 sellerReceives
+    ) {
+        FeeDistribution memory fees = this.calculateNonNFTFees(salePrice);
+
+        return (
+            fees.platformFee,
+            fees.platformFee,
+            fees.sellerAmount
+        );
     }
 }
