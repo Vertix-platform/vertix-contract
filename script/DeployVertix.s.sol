@@ -141,7 +141,7 @@ contract DeployVertix is Script {
         console.log("VertixGovernance marketplace set to:", vertixAddresses.marketplaceProxy);
 
         // add VertixNFT contract as supported NFT contract
-        VertixGovernance(vertixAddresses.governance).addSupportedNFTContract(vertixAddresses.nft);
+        VertixGovernance(vertixAddresses.governance).addSupportedNftContract(vertixAddresses.nft);
 
         // Transfer Escrow ownership to governance.
         // This is done via the Escrow proxy.

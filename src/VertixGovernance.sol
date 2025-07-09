@@ -36,7 +36,7 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
     FeeConfig private _feeConfig;
     ContractAddresses public contracts;
     address public verificationServer;
-    mapping(address => bool) public supportedNFTContracts;
+    mapping(address => bool) public supportedNftContracts;
 
 
     // Events
@@ -137,9 +137,9 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
      * @param nftContract Address of the NFT contract
      */
 
-    function addSupportedNFTContract(address nftContract) external onlyOwner {
+    function addSupportedNftContract(address nftContract) external onlyOwner {
         if (nftContract == address(0)) revert VertixGovernance__ZeroAddress();
-        supportedNFTContracts[nftContract] = true;
+        supportedNftContracts[nftContract] = true;
         emit SupportedNFTContractAdded(nftContract);
     }
 
@@ -147,9 +147,9 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
      * @dev Remove supported NFT contract
      * @param nftContract Address of the NFT contract
      */
-    function removeSupportedNFTContract(address nftContract) external onlyOwner {
-        if (!supportedNFTContracts[nftContract]) revert VertixGovernance__InvalidNFTContract();
-        supportedNFTContracts[nftContract] = false;
+    function removeSupportedNftContract(address nftContract) external onlyOwner {
+        if (!supportedNftContracts[nftContract]) revert VertixGovernance__InvalidNFTContract();
+        supportedNftContracts[nftContract] = false;
         emit SupportedNFTContractRemoved(nftContract);
     }
 
@@ -186,8 +186,8 @@ contract VertixGovernance is Initializable, OwnableUpgradeable, UUPSUpgradeable 
      * @param nftContract Address of the NFT contract
      * @return True if supported, false otherwise
      */
-    function isSupportedNFTContract(address nftContract) external view returns (bool) {
-        return supportedNFTContracts[nftContract];
+    function isSupportedNftContract(address nftContract) external view returns (bool) {
+        return supportedNftContracts[nftContract];
     }
 
 }

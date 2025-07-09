@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {VertixNFT} from "../../src/VertixNFT.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {VertixGovernance} from "../../src/VertixGovernance.sol";
 
@@ -266,7 +265,7 @@ function setUp() public {
         vm.expectEmit(true, true, true, true);
         emit NFTMinted(recipient, TOKEN_ID, 0, TOKEN_URI, METADATA_HASH, creator, ROYALTY_BPS);
 
-        nft.mintSingleNFT(recipient, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        nft.mintSingleNft(recipient, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
 
         assertEq(nft.ownerOf(TOKEN_ID), recipient);
         assertEq(nft.tokenURI(TOKEN_ID), TOKEN_URI);
@@ -281,7 +280,7 @@ function setUp() public {
         uint96 excessiveRoyalty = uint96(nft.MAX_ROYALTY_BPS()) + 1;
         vm.prank(creator);
         vm.expectRevert(VertixNFT.VertixNFT__InvalidRoyaltyPercentage.selector);
-        nft.mintSingleNFT(recipient, TOKEN_URI, METADATA_HASH, excessiveRoyalty);
+        nft.mintSingleNft(recipient, TOKEN_URI, METADATA_HASH, excessiveRoyalty);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -300,7 +299,7 @@ function setUp() public {
             recipient, TOKEN_ID, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, recipient, ROYALTY_BPS
         );
 
-        nft.mintSocialMediaNFT(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
+        nft.mintSocialMediaNft(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
 
         assertEq(nft.ownerOf(TOKEN_ID), recipient);
         assertEq(nft.tokenURI(TOKEN_ID), TOKEN_URI);
@@ -319,12 +318,12 @@ function setUp() public {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         vm.prank(user);
-        nft.mintSocialMediaNFT(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
+        nft.mintSocialMediaNft(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
 
         // Second mint with same social media ID
         vm.prank(user);
         vm.expectRevert(VertixNFT.VertixNFT__SocialMediaIdAlreadyUsed.selector);
-        nft.mintSocialMediaNFT(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
+        nft.mintSocialMediaNft(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
     }
 
     function test_RevertIf_MintSocialMediaNFTWithInvalidSignature() public {
@@ -335,7 +334,7 @@ function setUp() public {
 
         vm.prank(user);
         vm.expectRevert(VertixNFT.VertixNFT__InvalidSignature.selector);
-        nft.mintSocialMediaNFT(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
+        nft.mintSocialMediaNft(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
     }
 
     function test_RevertIf_MintSocialMediaNFTWithExcessiveRoyalty() public {
@@ -347,7 +346,7 @@ function setUp() public {
 
         vm.prank(user);
         vm.expectRevert(VertixNFT.VertixNFT__InvalidRoyaltyPercentage.selector);
-        nft.mintSocialMediaNFT(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, excessiveRoyalty, signature);
+        nft.mintSocialMediaNft(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, excessiveRoyalty, signature);
     }
 
 
@@ -416,20 +415,20 @@ function setUp() public {
         vm.stopPrank();
 
         // Cast to V2 interface
-        VertixNFTV2Mock upgradedNFT = VertixNFTV2Mock(address(nft));
+        VertixNFTV2Mock upgradedNft = VertixNFTV2Mock(address(nft));
 
         // Verify state preservation
-        assertEq(upgradedNFT.owner(), owner);
+        assertEq(upgradedNft.owner(), owner);
         // (, string memory name,, string memory image, uint256 maxSupply,) =
-        //     upgradedNFT.getCollectionDetails(COLLECTION_ID);
+        //     upgradedNft.getCollectionDetails(COLLECTION_ID);
         // assertEq(name, NAME);
         // assertEq(image, IMAGE);
         // assertEq(maxSupply, MAX_SUPPLY);
 
         // Test new functionality
         vm.prank(owner);
-        upgradedNFT.setNewFeature(100);
-        assertEq(upgradedNFT.getNewFeature(), 100);
+        upgradedNft.setNewFeature(100);
+        assertEq(upgradedNft.getNewFeature(), 100);
     }
 
     function test_RevertIf_NonOwnerUpgrades() public {

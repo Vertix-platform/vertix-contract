@@ -22,35 +22,24 @@ interface IVertixNFT is IERC721 {
         returns (uint256);
 
     // Mint an NFT to a collection
-    function mintToCollection(address to, uint256 collectionId, string calldata uri, bytes32 metadataHash) external;
+    function mintToCollection(address to, uint256 collectionId, string calldata uri, bytes32 metadataHash, uint96 royaltyBps) external;
 
     // Mint a single NFT (no collection)
-    function mintSingleNFT(address to, string calldata uri, bytes32 metadataHash) external;
+    function mintSingleNft(address to, string calldata uri, bytes32 metadataHash, uint96 royaltyBps) external;
 
     // Mint an NFT for a social media account
-    function mintSocialMediaNFT(
+    function mintSocialMediaNft(
         address to,
         string calldata socialMediaId,
         string calldata uri,
         bytes32 metadataHash,
+        uint96 royaltyBps,
         bytes calldata signature
     ) external;
 
-    // Get collection tokens
-    function getCollectionTokens(uint256 collectionId) external view returns (uint256[] memory);
-
-    // Get collection details
-    function getCollectionDetails(uint256 collectionId)
-        external
-        view
-        returns (
-            address creator,
-            string memory name,
-            string memory symbol,
-            string memory image,
-            uint256 maxSupply,
-            uint256 currentSupply
-        );
+    // Commented out functions - not currently implemented
+    // function getCollectionTokens(uint256 collectionId) external view returns (uint256[] memory);
+    // function getCollectionDetails(uint256 collectionId) external view returns (...);
 
     function getUsedSocialMediaIds(string calldata socialMediaId) external view returns (bool);
 

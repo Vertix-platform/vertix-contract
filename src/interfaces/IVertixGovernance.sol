@@ -24,7 +24,7 @@ interface IVertixGovernance {
     event EscrowUpdated(address newEscrow);
 
     // External functions
-    function initialize(address _marketplace, address _escrow, address _feeRecipient) external;
+    function initialize(address _marketplace, address _escrow, address _feeRecipient, address _verificationServer) external;
 
     function setPlatformFee(uint16 newFee) external;
 
@@ -34,11 +34,11 @@ interface IVertixGovernance {
 
     function setEscrow(address newEscrow) external;
 
-    function setVerificationServer()  external;
+    function setVerificationServer(address newServer) external;
 
-    function addSupportedNFTContract(address nftContract) external;
+    function addSupportedNftContract(address nftContract) external;
 
-    function removeSupportedNFTContract(address nftContract) external;
+    function removeSupportedNftContract(address nftContract) external;
 
     // View functions
     function getFeeConfig() external view returns (uint16 feeBps, address recipient);
@@ -47,5 +47,5 @@ interface IVertixGovernance {
 
     function getVerificationServer() external view returns (address);
 
-    function isSupportedNFTContract(address nftContract) external view returns (bool);
+    function isSupportedNftContract(address nftContract) external view returns (bool);
 }

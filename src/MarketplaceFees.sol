@@ -50,8 +50,8 @@ contract MarketplaceFees {
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    IVertixGovernance public immutable governanceContract;
-    IVertixEscrow public immutable escrowContract;
+    IVertixGovernance public immutable GOVERNANCE_CONTRACT;
+    IVertixEscrow public immutable ESCROW_CONTRACT;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
@@ -78,8 +78,8 @@ contract MarketplaceFees {
     //////////////////////////////////////////////////////////////*/
 
     constructor(address _governanceContract, address _escrowContract) {
-        governanceContract = IVertixGovernance(_governanceContract);
-        escrowContract = IVertixEscrow(_escrowContract);
+        GOVERNANCE_CONTRACT = IVertixGovernance(_governanceContract);
+        ESCROW_CONTRACT = IVertixEscrow(_escrowContract);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -93,12 +93,12 @@ contract MarketplaceFees {
      * @param tokenId The ID of the NFT being sold
      * @return FeeDistribution containing platform fee, royalty amount, seller amount, and recipients
      */
-    function calculateNFTFees(
+    function calculateNftFees(
         uint256 salePrice,
         address nftContract,
         uint256 tokenId
     ) external view returns (FeeDistribution memory) {
-        (uint256 platformFeeBps, address platformRecipient) = governanceContract.getFeeConfig();
+        (uint256 platformFeeBps, address platformRecipient) = GOVERNANCE_CONTRACT.getFeeConfig();
 
         // Get royalty info
         (address royaltyRecipient, uint256 royaltyAmount) =
@@ -126,8 +126,8 @@ contract MarketplaceFees {
      * @param salePrice The total sale price of the item
      * @return FeeDistribution containing platform fee, royalty amount (0), seller amount, and recipients
      */
-    function calculateNonNFTFees(uint256 salePrice) external view returns (FeeDistribution memory) {
-        (uint256 platformFeeBps, address platformRecipient) = governanceContract.getFeeConfig();
+    function calculateNonNftFees(uint256 salePrice) external view returns (FeeDistribution memory) {
+        (uint256 platformFeeBps, address platformRecipient) = GOVERNANCE_CONTRACT.getFeeConfig();
 
         uint256 platformFee = (salePrice * platformFeeBps) / 10000;
 
@@ -154,7 +154,7 @@ contract MarketplaceFees {
         uint256 startingPrice,
         uint256 currentHighestBid
     ) external view returns (uint256 minimumBid) {
-        (uint256 platformFeeBps,) = governanceContract.getFeeConfig();
+        (uint256 platformFeeBps,) = GOVERNANCE_CONTRACT.getFeeConfig();
         uint256 platformFee = (startingPrice * platformFeeBps) / 10000;
 
         minimumBid = currentHighestBid > 0 ? currentHighestBid + 1 : startingPrice;
@@ -162,6 +162,91 @@ contract MarketplaceFees {
         // Ensure bid covers minimum platform fee
         if (minimumBid < platformFee) {
             minimumBid = platformFee;
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Common fee distribution logic for direct sales (no escrow)
+     * @param fees Fee distribution configuration
+     * @param salePrice Original sale price
+     * @param seller Seller address
+     */
+    function _distributeFees(
+        FeeDistribution memory fees,
+        uint256 salePrice,
+        address seller
+    ) internal {
+        // Transfer platform fee
+        if (fees.platformFee > 0) {
+            _safeTransferEth(fees.platformRecipient, fees.platformFee);
+        }
+
+        // Transfer royalty if applicable
+        if (fees.royaltyAmount > 0) {
+            _safeTransferEth(fees.royaltyRecipient, fees.royaltyAmount);
+        }
+
+        // Transfer remaining amount to seller if no escrow needed
+        if (fees.sellerAmount > 0) {
+            _safeTransferEth(seller, fees.sellerAmount);
+        }
+
+        emit FeesDistributed(
+            salePrice,
+            fees.platformFee,
+            fees.royaltyAmount,
+            fees.platformRecipient,
+            fees.royaltyRecipient,
+            seller
+        );
+    }
+
+    /**
+     * @dev Fee distribution for sales with escrow (platform fee only)
+     * @param fees Fee distribution configuration
+     * @param salePrice Original sale price
+     * @param seller Seller address
+     */
+    function _distributeFeesWithEscrow(
+        FeeDistribution memory fees,
+        uint256 salePrice,
+        address seller
+    ) internal {
+        // Transfer platform fee
+        if (fees.platformFee > 0) {
+            _safeTransferEth(fees.platformRecipient, fees.platformFee);
+        }
+
+        emit FeesDistributed(
+            salePrice,
+            fees.platformFee,
+            0,
+            fees.platformRecipient,
+            address(0),
+            seller
+        );
+    }
+
+    /**
+     * @dev Handle escrow deposit for non-NFT sales
+     * @param listingId The listing ID
+     * @param escrowAmount Amount to deposit in escrow
+     * @param seller Seller address
+     * @param buyer Buyer address
+     */
+    function _handleEscrowDeposit(
+        uint256 listingId,
+        uint256 escrowAmount,
+        address seller,
+        address buyer
+    ) internal {
+        if (escrowAmount > 0) {
+            ESCROW_CONTRACT.lockFunds{value: escrowAmount}(listingId, seller, buyer);
+            emit EscrowDeposit(listingId, escrowAmount, seller, buyer);
         }
     }
 
@@ -175,43 +260,24 @@ contract MarketplaceFees {
      * @return refundAmount Amount to refund to buyer if overpaid
      * @notice This function handles the payment for NFT sales, distributing fees to platform, royalty recipient, and seller.
      */
-    function processNFTSalePayment(
+    function processNftSalePayment(
         PaymentConfig calldata config
     ) external payable returns (uint256 refundAmount) {
         if (msg.value < config.salePrice) {
             revert MarketplaceFees__InsufficientPayment();
         }
 
-        FeeDistribution memory fees = this.calculateNFTFees(
+        FeeDistribution memory fees = this.calculateNftFees(
             config.salePrice,
             config.nftContract,
             config.tokenId
         );
 
         // Distribute payments
-        if (fees.platformFee > 0) {
-            _safeTransferETH(fees.platformRecipient, fees.platformFee);
-        }
-
-        if (fees.royaltyAmount > 0) {
-            _safeTransferETH(fees.royaltyRecipient, fees.royaltyAmount);
-        }
-
-        if (fees.sellerAmount > 0) {
-            _safeTransferETH(config.seller, fees.sellerAmount);
-        }
+        _distributeFees(fees, config.salePrice, config.seller);
 
         // Calculate refund
         refundAmount = msg.value - config.salePrice;
-
-        emit FeesDistributed(
-            config.salePrice,
-            fees.platformFee,
-            fees.royaltyAmount,
-            fees.platformRecipient,
-            fees.royaltyRecipient,
-            config.seller
-        );
     }
 
     /**
@@ -223,7 +289,7 @@ contract MarketplaceFees {
      * @return refundAmount Amount to refund to buyer if overpaid
      * @notice This function handles the payment for non-NFT sales, distributing platform fees and locking funds in escrow.
      */
-    function processNonNFTSalePayment(
+    function processNonNftSalePayment(
         uint256 listingId,
         uint256 salePrice,
         address seller,
@@ -233,31 +299,17 @@ contract MarketplaceFees {
             revert MarketplaceFees__InsufficientPayment();
         }
 
-        FeeDistribution memory fees = this.calculateNonNFTFees(salePrice);
+        FeeDistribution memory fees = this.calculateNonNftFees(salePrice);
 
-        // Transfer platform fee
-        if (fees.platformFee > 0) {
-            _safeTransferETH(fees.platformRecipient, fees.platformFee);
-        }
+        // Distribute platform fee only (seller amount goes to escrow)
+        _distributeFeesWithEscrow(fees, salePrice, seller);
 
         // Send remaining amount to escrow
         uint256 escrowAmount = salePrice - fees.platformFee;
-        if (escrowAmount > 0) {
-            escrowContract.lockFunds{value: escrowAmount}(listingId, seller, buyer);
-            emit EscrowDeposit(listingId, escrowAmount, seller, buyer);
-        }
+        _handleEscrowDeposit(listingId, escrowAmount, seller, buyer);
 
         // Calculate refund
         refundAmount = msg.value - salePrice;
-
-        emit FeesDistributed(
-            salePrice,
-            fees.platformFee,
-            0,
-            fees.platformRecipient,
-            address(0),
-            seller
-        );
     }
 
     /**
@@ -266,7 +318,7 @@ contract MarketplaceFees {
      * @param seller The address of the seller
      * @param nftContract The address of the NFT contract (if applicable)
      * @param tokenId The ID of the NFT being auctioned (if applicable)
-     * @param isNFT Whether the auction is for an NFT or a non-NFT item
+     * @param isNft Whether the auction is for an NFT or a non-NFT item
      * @param listingId The ID of the auction listing
      * @notice This function handles the payment distribution for auction winners, including platform fees, royalties, and seller payments.
      * It ensures that all fees are properly distributed and funds are transferred to the appropriate parties.
@@ -276,57 +328,24 @@ contract MarketplaceFees {
         address seller,
         address nftContract,
         uint256 tokenId,
-        bool isNFT,
+        bool isNft,
         uint256 listingId
     ) external payable {
-        if (isNFT) {
-            FeeDistribution memory fees = this.calculateNFTFees(
+        if (isNft) {
+            FeeDistribution memory fees = this.calculateNftFees(
                 highestBid,
                 nftContract,
                 tokenId
             );
 
-            if (fees.platformFee > 0) {
-                _safeTransferETH(fees.platformRecipient, fees.platformFee);
-            }
-
-            if (fees.royaltyAmount > 0) {
-                _safeTransferETH(fees.royaltyRecipient, fees.royaltyAmount);
-            }
-
-            if (fees.sellerAmount > 0) {
-                _safeTransferETH(seller, fees.sellerAmount);
-            }
-
-            emit FeesDistributed(
-                highestBid,
-                fees.platformFee,
-                fees.royaltyAmount,
-                fees.platformRecipient,
-                fees.royaltyRecipient,
-                seller
-            );
+            _distributeFees(fees, highestBid, seller);
         } else {
-            FeeDistribution memory fees = this.calculateNonNFTFees(highestBid);
+            FeeDistribution memory fees = this.calculateNonNftFees(highestBid);
 
-            if (fees.platformFee > 0) {
-                _safeTransferETH(fees.platformRecipient, fees.platformFee);
-            }
+            _distributeFeesWithEscrow(fees, highestBid, seller);
 
             uint256 escrowAmount = highestBid - fees.platformFee;
-            if (escrowAmount > 0) {
-                escrowContract.lockFunds{value: escrowAmount}(listingId, seller, msg.sender);
-                emit EscrowDeposit(listingId, escrowAmount, seller, msg.sender);
-            }
-
-            emit FeesDistributed(
-                highestBid,
-                fees.platformFee,
-                0,
-                fees.platformRecipient,
-                address(0),
-                seller
-            );
+            _handleEscrowDeposit(listingId, escrowAmount, seller, msg.sender);
         }
     }
 
@@ -338,7 +357,7 @@ contract MarketplaceFees {
      */
     function refundExcessPayment(address buyer, uint256 excessAmount) external {
         if (excessAmount > 0) {
-            _safeTransferETH(buyer, excessAmount);
+            _safeTransferEth(buyer, excessAmount);
         }
     }
 
@@ -353,7 +372,7 @@ contract MarketplaceFees {
      * @notice This function attempts to transfer ETH and reverts if it fails.
      * It is used to ensure that all ETH transfers in the contract are handled safely.
      */
-    function _safeTransferETH(address to, uint256 amount) internal {
+    function _safeTransferEth(address to, uint256 amount) internal {
         if (amount == 0) return;
 
         (bool success, ) = payable(to).call{value: amount}("");
@@ -372,7 +391,7 @@ contract MarketplaceFees {
      * @return recipient Current fee recipient address
      */
     function getPlatformFeeConfig() external view returns (uint256 feeBps, address recipient) {
-        return governanceContract.getFeeConfig();
+        return GOVERNANCE_CONTRACT.getFeeConfig();
     }
 
     /**
@@ -386,7 +405,7 @@ contract MarketplaceFees {
      * @return sellerReceives The amount the seller receives after fees
      * @notice This function allows users to preview the fees that will be applied to an NFT sale before proceeding with the transaction.
      */
-    function previewNFTFees(
+    function previewNftFees(
         uint256 salePrice,
         address nftContract,
         uint256 tokenId
@@ -396,7 +415,7 @@ contract MarketplaceFees {
         uint256 royaltyAmount,
         uint256 sellerReceives
     ) {
-        FeeDistribution memory fees = this.calculateNFTFees(salePrice, nftContract, tokenId);
+        FeeDistribution memory fees = this.calculateNftFees(salePrice, nftContract, tokenId);
 
         return (
             fees.platformFee + fees.royaltyAmount,
@@ -414,12 +433,12 @@ contract MarketplaceFees {
      * @return sellerReceives The amount the seller receives after fees
      * @notice This function allows users to preview the fees that will be applied to a non-NFT sale before proceeding with the transaction.
      */
-    function previewNonNFTFees(uint256 salePrice) external view returns (
+    function previewNonNftFees(uint256 salePrice) external view returns (
         uint256 totalFees,
         uint256 platformFee,
         uint256 sellerReceives
     ) {
-        FeeDistribution memory fees = this.calculateNonNFTFees(salePrice);
+        FeeDistribution memory fees = this.calculateNonNftFees(salePrice);
 
         return (
             fees.platformFee,

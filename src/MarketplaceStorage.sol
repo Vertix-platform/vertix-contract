@@ -14,7 +14,7 @@ contract MarketplaceStorage {
                     STRUCTS
     //////////////////////////////////////////////////////////////*/
 
-    struct NFTListing {
+    struct NftListing {
         address seller;
         address nftContract;
         uint96 price;            // supports up to ~79B ETH
@@ -22,7 +22,7 @@ contract MarketplaceStorage {
         uint8 flags;             // 1 byte: bit 0=active, bit 1=listedForAuction
     }
 
-    struct NonNFTListing {
+    struct NonNftListing {
         address seller;
         uint96 price;            // supports up to ~79B ETH
         uint8 assetType;
@@ -39,12 +39,27 @@ contract MarketplaceStorage {
         uint96 startingPrice;
         uint64 startTime;
         uint24 duration;         // supports up to 194 days
-        uint8 flags;             // bit 0=active, bit 1=isNFT
+        uint8 flags;             // bit 0=active, bit 1=isNft
         uint256 tokenIdOrListingId;
         uint256 auctionId;
         address nftContract;
         VertixUtils.AssetType assetType;
         string assetId;          // Dynamic (for non-NFT only)
+    }
+
+    struct AuctionDetailsView {
+        bool active;
+        bool isNft;
+        uint256 startTime;
+        uint24 duration;
+        address seller;
+        address highestBidder;
+        uint256 highestBid;
+        uint256 tokenIdOrListingId;
+        uint256 startingPrice;
+        address nftContractAddr;
+        uint8 assetType;
+        string assetId;
     }
 
     struct Bid {
@@ -57,7 +72,7 @@ contract MarketplaceStorage {
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    IVertixNFT public vertixNFTContract;
+    IVertixNFT public vertixNftContract;
     address public governanceContract;
     address public escrowContract;
 
@@ -68,8 +83,8 @@ contract MarketplaceStorage {
     uint24 public constant MAX_AUCTION_DURATION = 7 days;
 
 
-    mapping(uint256 => NFTListing) public nftListings;
-    mapping(uint256 => NonNFTListing) public nonNFTListings;
+    mapping(uint256 => NftListing) public nftListings;
+    mapping(uint256 => NonNftListing) public nonNftListings;
     mapping(uint256 => AuctionDetails) public auctionListings;
     mapping(uint256 => Bid[]) public bidsPlaced;
 
@@ -125,11 +140,11 @@ contract MarketplaceStorage {
     }
 
     function setContracts(
-        address _vertixNFTContract,
+        address _vertixNftContract,
         address _governanceContract,
         address _escrowContract
     ) external onlyOwner {
-        vertixNFTContract = IVertixNFT(_vertixNFTContract);
+        vertixNftContract = IVertixNFT(_vertixNftContract);
         governanceContract = _governanceContract;
         escrowContract = _escrowContract;
     }
@@ -138,7 +153,7 @@ contract MarketplaceStorage {
                             NFT LISTINGS
     //////////////////////////////////////////////////////////////*/
 
-    function createNFTListing(
+    function createNftListing(
         address seller,
         address nftContractAddr,
         uint256 tokenId,
@@ -146,7 +161,7 @@ contract MarketplaceStorage {
     ) external onlyAuthorized returns (uint256 listingId) {
         listingId = listingIdCounter++;
 
-        nftListings[listingId] = NFTListing({
+        nftListings[listingId] = NftListing({
             seller: seller,
             nftContract: nftContractAddr,
             price: price,
@@ -154,15 +169,21 @@ contract MarketplaceStorage {
             flags: 1 // active = true
         });
 
-        bytes32 hash = keccak256(abi.encodePacked(nftContractAddr, tokenId));
+        bytes32 hash;
+        assembly {
+            let ptr := mload(0x40)
+            mstore(ptr, nftContractAddr)
+            mstore(add(ptr, 0x20), tokenId)
+            hash := keccak256(ptr, 0x40)
+        }
         listingHashes[hash] = true;
     }
 
-    function updateNFTListingFlags(uint256 listingId, uint8 flags) external onlyAuthorized {
+    function updateNftListingFlags(uint256 listingId, uint8 flags) external onlyAuthorized {
         nftListings[listingId].flags = flags;
     }
 
-    function getNFTListing(uint256 listingId) external view returns (
+    function getNftListing(uint256 listingId) external view returns (
         address seller,
         address nftContractAddr,
         uint256 tokenId,
@@ -170,7 +191,7 @@ contract MarketplaceStorage {
         bool active,
         bool auctionListed
     ) {
-        NFTListing memory listing = nftListings[listingId];
+        NftListing memory listing = nftListings[listingId];
         return (
             listing.seller,
             listing.nftContract,
@@ -181,7 +202,7 @@ contract MarketplaceStorage {
         );
     }
 
-    function removeNFTListingHash(address nftContractAddr, uint256 tokenId) external onlyAuthorized {
+    function removeNftListingHash(address nftContractAddr, uint256 tokenId) external onlyAuthorized {
         bytes32 hash = keccak256(abi.encodePacked(nftContractAddr, tokenId));
         listingHashes[hash] = false;
     }
@@ -190,7 +211,7 @@ contract MarketplaceStorage {
                           NON-NFT LISTINGS
     //////////////////////////////////////////////////////////////*/
 
-    function createNonNFTListing(
+    function createNonNftListing(
         address seller,
         uint8 assetType,
         string calldata assetId,
@@ -200,7 +221,7 @@ contract MarketplaceStorage {
     ) external onlyAuthorized returns (uint256 listingId) {
         listingId = listingIdCounter++;
 
-        nonNFTListings[listingId] = NonNFTListing({
+        nonNftListings[listingId] = NonNftListing({
             seller: seller,
             price: price,
             assetType: assetType,
@@ -214,11 +235,11 @@ contract MarketplaceStorage {
         listingHashes[hash] = true;
     }
 
-    function updateNonNFTListingFlags(uint256 listingId, uint8 flags) external onlyAuthorized {
-        nonNFTListings[listingId].flags = flags;
+    function updateNonNftListingFlags(uint256 listingId, uint8 flags) external onlyAuthorized {
+        nonNftListings[listingId].flags = flags;
     }
 
-    function getNonNFTListing(uint256 listingId) external view returns (
+    function getNonNftListing(uint256 listingId) external view returns (
         address seller,
         uint96 price,
         uint8 assetType,
@@ -228,7 +249,7 @@ contract MarketplaceStorage {
         string memory metadata,
         bytes32 verificationHash
     ) {
-        NonNFTListing memory listing = nonNFTListings[listingId];
+        NonNftListing memory listing = nonNftListings[listingId];
         return (
             listing.seller,
             listing.price,
@@ -241,7 +262,7 @@ contract MarketplaceStorage {
         );
     }
 
-    function removeNonNFTListingHash(address seller, string calldata assetId) external onlyAuthorized {
+    function removeNonNftListingHash(address seller, string calldata assetId) external onlyAuthorized {
         bytes32 hash = keccak256(abi.encodePacked(seller, assetId));
         listingHashes[hash] = false;
     }
@@ -255,7 +276,7 @@ contract MarketplaceStorage {
         uint256 tokenIdOrListingId,
         uint96 startingPrice,
         uint24 duration,
-        bool isNFT,
+        bool isNft,
         address nftContractAddr,
         uint8 assetType,
         string calldata assetId
@@ -269,7 +290,7 @@ contract MarketplaceStorage {
             startingPrice: startingPrice,
             startTime: uint64(block.timestamp),
             duration: duration,
-            flags: isNFT ? 3 : 1, // active=1, isNFT=2
+            flags: isNft ? 3 : 1, // active=1, isNft=2
             tokenIdOrListingId: tokenIdOrListingId,
             auctionId: auctionId,
             nftContract: nftContractAddr,
@@ -309,35 +330,22 @@ contract MarketplaceStorage {
         delete tokenOrListingIdForAuction[auctionId];
     }
 
-    function getAuctionDetails(uint256 auctionId) external view returns (
-        bool active,
-        bool isNFT,
-        uint256 startTime,
-        uint24 duration,
-        address seller,
-        address highestBidder,
-        uint256 highestBid,
-        uint256 tokenIdOrListingId,
-        uint256 startingPrice,
-        address nftContractAddr,
-        uint8 assetType,
-        string memory assetId
-    ) {
+    function getAuctionDetailsView(uint256 auctionId) external view returns (AuctionDetailsView memory) {
         AuctionDetails memory auction = auctionListings[auctionId];
-        return (
-            (auction.flags & 1) == 1,
-            (auction.flags & 2) == 2,
-            uint256(auction.startTime),
-            auction.duration,
-            auction.seller,
-            auction.highestBidder,
-            uint256(auction.highestBid),
-            auction.tokenIdOrListingId,
-            uint256(auction.startingPrice),
-            address(auction.nftContract),
-            uint8(auction.assetType),
-            auction.assetId
-        );
+        return AuctionDetailsView({
+            active: (auction.flags & 1) == 1,
+            isNft: (auction.flags & 2) == 2,
+            startTime: auction.startTime,
+            duration: auction.duration,
+            seller: auction.seller,
+            highestBidder: auction.highestBidder,
+            highestBid: auction.highestBid,
+            tokenIdOrListingId: auction.tokenIdOrListingId,
+            startingPrice: auction.startingPrice,
+            nftContractAddr: auction.nftContract,
+            assetType: uint8(auction.assetType),
+            assetId: auction.assetId
+        });
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -154,7 +154,7 @@ contract VertixNFT is
         if (collection.currentSupply >= collection.maxSupply) revert VertixNFT__MaxSupplyReached();
         if (royaltyBps > MAX_ROYALTY_BPS) revert VertixNFT__InvalidRoyaltyPercentage();
 
-        _mintNFT(to, collectionId, uri, metadataHash, collection.creator, royaltyBps);
+        _mintNft(to, collectionId, uri, metadataHash, collection.creator, royaltyBps);
         collection.currentSupply++;
     }
 
@@ -165,9 +165,9 @@ contract VertixNFT is
      * @param metadataHash Metadata hash for verification
      * @param royaltyBps Royalty percentage in basis points (e.g., 500 = 5%)
      */
-    function mintSingleNFT(address to, string calldata uri, bytes32 metadataHash, uint96 royaltyBps) external {
+    function mintSingleNft(address to, string calldata uri, bytes32 metadataHash, uint96 royaltyBps) external {
         if (royaltyBps > MAX_ROYALTY_BPS) revert VertixNFT__InvalidRoyaltyPercentage();
-        _mintNFT(to, 0, uri, metadataHash, msg.sender, royaltyBps);
+        _mintNft(to, 0, uri, metadataHash, msg.sender, royaltyBps);
     }
 
     /**
@@ -179,7 +179,7 @@ contract VertixNFT is
      * @param royaltyBps Royalty percentage in basis points (e.g., 500 = 5%)
      * @param signature Server-signed proof of verification
      */
-    function mintSocialMediaNFT(
+    function mintSocialMediaNft(
         address to,
         string calldata socialMediaId,
         string calldata uri,
@@ -216,7 +216,7 @@ contract VertixNFT is
      * @param royaltyRecipient Royalty recipient address
      * @param royaltyBps Royalty percentage in basis points
      */
-    function _mintNFT(
+    function _mintNft(
         address to,
         uint256 collectionId,
         string calldata uri,

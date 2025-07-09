@@ -3,11 +3,10 @@ pragma solidity ^0.8.20;
 
 /**
  * @title VertixUtils
- * @dev Library for common utilities in Vertix contracts
+ * @dev Library for common utilities in Vertix contracts including multi-chain support
  */
 library VertixUtils {
     // Errors
-    error VertixUtils__InvalidPrice();
     error VertixUtils__EmptyProof();
 
     // Type declarations
@@ -20,16 +19,41 @@ library VertixUtils {
         Other
     }
 
-    // Constants
-    uint256 private constant MIN_PRICE = 1 wei;
-
-    /**
-     * @dev Validate price is non-zero
-     * @param price The price to validate
-     */
-    function validatePrice(uint256 price) internal pure {
-        if (price < MIN_PRICE) revert VertixUtils__InvalidPrice();
+    // Multi-chain support
+    enum ChainType {
+        Polygon,     // 0 - Primary chain
+        Base,        // 1 - Secondary chain
+        Ethereum     // 2 - Future support
     }
+
+    // Cross-chain message types
+    enum MessageType {
+        AssetTransfer,       // 0 - Asset ownership transfer
+        PriceSync,          // 1 - Price synchronization
+        VerificationSync,   // 2 - Verification status sync
+        EscrowUpdate        // 3 - Escrow status update
+    }
+
+    // Cross-chain asset representation
+    struct CrossChainAsset {
+        uint8 chainType;        // ChainType enum
+        address contractAddress;
+        uint256 tokenId;
+        uint64 lastSyncBlock;   // Last block when synced
+        bool isActive;
+    }
+
+    // Cross-chain message structure
+    struct CrossChainMessage {
+        uint8 messageType;      // MessageType enum
+        uint8 sourceChain;      // Source ChainType
+        uint8 targetChain;      // Target ChainType
+        uint64 timestamp;
+        bytes32 messageHash;
+        bytes payload;
+    }
+
+
 
     /**
      * @dev Hash verification proof for off-chain validation
@@ -41,17 +65,20 @@ library VertixUtils {
         return keccak256(proof);
     }
 
+
+
     /**
-     * @dev Get string representation of AssetType (useful for frontends)
-     * @param assetType The AssetType enum value
-     * @return String representation
+     * @dev Create asset ID for cross-chain tracking
+     * @param chainType Source chain type
+     * @param contractAddr Contract address
+     * @param tokenId Token ID
+     * @return bytes32 unique asset identifier
      */
-    function assetTypeToString(AssetType assetType) internal pure returns (string memory) {
-        if (assetType == AssetType.SocialMedia) return "SocialMedia";
-        if (assetType == AssetType.Domain) return "Domain";
-        if (assetType == AssetType.App) return "App";
-        if (assetType == AssetType.Website) return "Website";
-        if (assetType == AssetType.Youtube) return "Youtube";
-        return "Other";
+    function createCrossChainAssetId(
+        ChainType chainType,
+        address contractAddr,
+        uint256 tokenId
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(chainType, contractAddr, tokenId));
     }
 }

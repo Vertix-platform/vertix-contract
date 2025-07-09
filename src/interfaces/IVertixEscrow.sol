@@ -36,5 +36,5 @@ interface IVertixEscrow {
     function refund(uint256 listingId) external;
 
     // View functions
-    function getEscrowDetails(uint256 listingId) external view returns (Escrow memory);
+    function getEscrow(uint256 listingId) external view returns (Escrow memory);
 }

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Script} from "forge-std/Script.sol";
-import {console} from "forge-std/console.sol";
 
 contract HelperConfig is Script {
     // Error
