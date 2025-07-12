@@ -99,85 +99,6 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        INTERNAL HELPERS
-    //////////////////////////////////////////////////////////////*/
-    
-    /**
-     * @dev Safely transfer ERC721 token with proper error handling
-     */
-    function _safeTransferNft(address nftContract, address from, address to, uint256 tokenId) internal {
-        try IERC721(nftContract).transferFrom(from, to, tokenId) {
-            // Verify transfer succeeded by checking ownership
-            if (IERC721(nftContract).ownerOf(tokenId) != to) {
-                revert MC__TransferFailed();
-            }
-        } catch {
-            revert MC__TransferFailed();
-        }
-    }
-
-    /**
-     * @dev Common validation and checks for listing functions
-     * @param nftContractAddr Address of NFT contract
-     * @param tokenId ID of the NFT
-     * @param price Sale price in wei
-     */
-    function _validateListingRequirements(
-        address nftContractAddr,
-        uint256 tokenId,
-        uint96 price
-    ) internal view {
-        if (!GOVERNANCE_CONTRACT.isSupportedNftContract(nftContractAddr)) revert MC__InvalidNFTContract();
-        if (price == 0) revert MC__InsufficientPayment();
-        if (IERC721(nftContractAddr).ownerOf(tokenId) != msg.sender) revert MC__NotOwner();
-
-        // Check duplicate listing
-        bytes32 listingHash;
-        assembly {
-            let ptr := mload(0x40)
-            mstore(ptr, nftContractAddr)
-            mstore(add(ptr, 0x20), tokenId)
-            listingHash := keccak256(ptr, 0x40)
-        }
-        if (STORAGE_CONTRACT.checkListingHash(listingHash)) revert MC__DuplicateListing();
-    }
-
-    /**
-     * @dev Internal function to create NFT listing after validation
-     * @param nftContractAddr Address of NFT contract
-     * @param tokenId ID of the NFT
-     * @param price Sale price in wei
-     */
-    function _createNftListing(
-        address nftContractAddr,
-        uint256 tokenId,
-        uint96 price
-    ) internal returns (uint256 listingId) {
-        // Transfer NFT (reverts on failure)
-        _safeTransferNft(nftContractAddr, msg.sender, address(this), tokenId);
-
-        // Create listing
-        listingId = STORAGE_CONTRACT.createNftListing(
-            msg.sender,
-            nftContractAddr,
-            tokenId,
-            price
-        );
-
-        emit NFTListed(listingId, msg.sender, nftContractAddr, tokenId, price);
-    }
-
-    /**
-     * @dev Common validation for cancellation functions
-     * @param seller Address of the seller
-     * @param active Whether the listing is active
-     */
-    function _validateCancellation(address seller, bool active) internal view {
-        if (!active) revert MC__InvalidListing();
-        if (msg.sender != seller) revert MC__NotSeller();
-    }
-
-    /*//////////////////////////////////////////////////////////////
                           LISTING FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -191,9 +112,9 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         address nftContractAddr,
         uint256 tokenId,
         uint96 price
-    ) external nonReentrant whenNotPaused {
+    ) external nonReentrant whenNotPaused returns (uint256) {
         _validateListingRequirements(nftContractAddr, tokenId, price);
-        _createNftListing(nftContractAddr, tokenId, price);
+        return _createNftListing(nftContractAddr, tokenId, price);
     }
 
     /**
@@ -210,10 +131,11 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         uint96 price,
         string calldata metadata,
         bytes calldata verificationProof
-    ) external nonReentrant whenNotPaused {
-        if (assetType > uint8(VertixUtils.AssetType.Other) || price == 0) {
+    ) external nonReentrant whenNotPaused returns (uint256) {
+        if (assetType > uint8(VertixUtils.AssetType.Other)) {
             revert MC__InvalidAssetType();
         }
+        if (price == 0) revert MC__InsufficientPayment();
 
         // Check duplicates
         bytes32 listingHash = keccak256(abi.encodePacked(msg.sender, assetId));
@@ -229,6 +151,7 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         );
 
         emit NonNFTListed(listingId, msg.sender, assetType, assetId, price);
+        return listingId;
     }
 
     /**
@@ -243,9 +166,9 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         uint96 price,
         string calldata socialMediaId,
         bytes calldata signature
-    ) external nonReentrant whenNotPaused {
+    ) external nonReentrant whenNotPaused returns (uint256) {
         address nftContractAddr = address(STORAGE_CONTRACT.vertixNftContract());
-        
+
         // Additional validation specific to social media NFTs
         if (!STORAGE_CONTRACT.vertixNftContract().getUsedSocialMediaIds(socialMediaId)) {
             revert MC__InvalidSocialMediaNFT();
@@ -259,7 +182,7 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
 
         // Use common validation and listing creation
         _validateListingRequirements(nftContractAddr, tokenId, price);
-        _createNftListing(nftContractAddr, tokenId, price);
+        return _createNftListing(nftContractAddr, tokenId, price);
     }
 
         /**
@@ -468,6 +391,85 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
     function unpause() external {
         if (msg.sender != STORAGE_CONTRACT.owner()) revert MC__NotOwner();
         _unpause();
+    }
+
+        /*//////////////////////////////////////////////////////////////
+                        INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Safely transfer ERC721 token with proper error handling
+     */
+    function _safeTransferNft(address nftContract, address from, address to, uint256 tokenId) internal {
+        try IERC721(nftContract).transferFrom(from, to, tokenId) {
+            // Verify transfer succeeded by checking ownership
+            if (IERC721(nftContract).ownerOf(tokenId) != to) {
+                revert MC__TransferFailed();
+            }
+        } catch {
+            revert MC__TransferFailed();
+        }
+    }
+
+    /**
+     * @dev Common validation and checks for listing functions
+     * @param nftContractAddr Address of NFT contract
+     * @param tokenId ID of the NFT
+     * @param price Sale price in wei
+     */
+    function _validateListingRequirements(
+        address nftContractAddr,
+        uint256 tokenId,
+        uint96 price
+    ) internal view {
+        if (!GOVERNANCE_CONTRACT.isSupportedNftContract(nftContractAddr)) revert MC__InvalidNFTContract();
+        if (price == 0) revert MC__InsufficientPayment();
+        if (IERC721(nftContractAddr).ownerOf(tokenId) != msg.sender) revert MC__NotOwner();
+
+        // Check duplicate listing
+        bytes32 listingHash;
+        assembly {
+            let ptr := mload(0x40)
+            mstore(ptr, nftContractAddr)
+            mstore(add(ptr, 0x20), tokenId)
+            listingHash := keccak256(ptr, 0x40)
+        }
+        if (STORAGE_CONTRACT.checkListingHash(listingHash)) revert MC__DuplicateListing();
+    }
+
+    /**
+     * @dev Internal function to create NFT listing after validation
+     * @param nftContractAddr Address of NFT contract
+     * @param tokenId ID of the NFT
+     * @param price Sale price in wei
+     */
+    function _createNftListing(
+        address nftContractAddr,
+        uint256 tokenId,
+        uint96 price
+    ) internal returns (uint256 listingId) {
+        // Transfer NFT (reverts on failure)
+        _safeTransferNft(nftContractAddr, msg.sender, address(this), tokenId);
+
+        // Create listing
+        listingId = STORAGE_CONTRACT.createNftListing(
+            msg.sender,
+            nftContractAddr,
+            tokenId,
+            price
+        );
+
+        emit NFTListed(listingId, msg.sender, nftContractAddr, tokenId, price);
+    }
+
+    /**
+     * @dev Common validation for cancellation functions
+     * @param seller Address of the seller
+     * @param active Whether the listing is active
+     */
+    function _validateCancellation(address seller, bool active) internal view {
+        if (!active) revert MC__InvalidListing();
+        if (msg.sender != seller) revert MC__NotSeller();
     }
 
     fallback() payable external{}

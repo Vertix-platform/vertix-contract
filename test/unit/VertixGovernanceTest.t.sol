@@ -39,6 +39,8 @@ contract VertixGovernanceTest is Test {
     event MarketplaceUpdated(address newMarketplace);
     event EscrowUpdated(address newEscrow);
     event VerificationServerUpdated(address newServer);
+    event SupportedNFTContractAdded(address indexed nftContract);
+    event SupportedNFTContractRemoved(address indexed nftContract);
 
     function setUp() public {
         vm.startPrank(owner);
@@ -363,5 +365,93 @@ contract VertixGovernanceTest is Test {
         vm.prank(user);
         vm.expectRevert();
         governance.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    NFT CONTRACT SUPPORT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_AddSupportedNftContract() public {
+        address nftContract = makeAddr("nftContract");
+        vm.prank(owner);
+
+        vm.expectEmit(true, false, false, true);
+        emit SupportedNFTContractAdded(nftContract);
+
+        governance.addSupportedNftContract(nftContract);
+
+        assertTrue(governance.isSupportedNftContract(nftContract));
+    }
+
+    function test_RevertIf_NonOwnerAddsSupportedNftContract() public {
+        address nftContract = makeAddr("nftContract");
+        vm.prank(user);
+        vm.expectRevert();
+        governance.addSupportedNftContract(nftContract);
+    }
+
+    function test_RevertIf_AddZeroAddressNftContract() public {
+        vm.prank(owner);
+        vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
+        governance.addSupportedNftContract(address(0));
+    }
+
+    function test_RemoveSupportedNftContract() public {
+        address nftContract = makeAddr("nftContract");
+
+        // First, add the NFT contract
+        vm.prank(owner);
+        governance.addSupportedNftContract(nftContract);
+        assertTrue(governance.isSupportedNftContract(nftContract));
+
+        // Then, remove it
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, true);
+        emit SupportedNFTContractRemoved(nftContract);
+
+        governance.removeSupportedNftContract(nftContract);
+        assertFalse(governance.isSupportedNftContract(nftContract));
+    }
+
+    function test_RevertIf_NonOwnerRemovesSupportedNftContract() public {
+        address nftContract = makeAddr("nftContract");
+
+        // First, add the NFT contract
+        vm.prank(owner);
+        governance.addSupportedNftContract(nftContract);
+
+        // Try to remove as non-owner
+        vm.prank(user);
+        vm.expectRevert();
+        governance.removeSupportedNftContract(nftContract);
+    }
+
+    function test_RevertIf_RemoveUnsupportedNftContract() public {
+        address nftContract = makeAddr("nftContract");
+
+        vm.prank(owner);
+        vm.expectRevert(VertixGovernance.VertixGovernance__InvalidNFTContract.selector);
+        governance.removeSupportedNftContract(nftContract);
+    }
+
+    function test_IsSupportedNftContract() public {
+        address nftContract = makeAddr("nftContract");
+
+        // Initially, the contract should not be supported
+        assertFalse(governance.isSupportedNftContract(nftContract));
+
+        // Add the NFT contract
+        vm.prank(owner);
+        governance.addSupportedNftContract(nftContract);
+
+        // Verify it is supported
+        assertTrue(governance.isSupportedNftContract(nftContract));
+
+        // Remove the NFT contract
+        vm.prank(owner);
+        governance.removeSupportedNftContract(nftContract);
+
+        // Verify it is no longer supported
+        assertFalse(governance.isSupportedNftContract(nftContract));
     }
 }

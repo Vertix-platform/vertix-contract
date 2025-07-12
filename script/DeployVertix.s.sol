@@ -67,14 +67,6 @@ contract DeployVertix is Script {
         addresses.crossChainRegistry = address(new CrossChainRegistry(vm.addr(deployerKey), addresses.marketplaceStorage));
         console.log("CrossChainRegistry deployed at:", addresses.crossChainRegistry);
 
-        // Deploy VertixNFT
-        address vertixNftImpl = address(new VertixNFT());
-        addresses.nft = deployProxy(
-            vertixNftImpl,
-            abi.encodeWithSelector(VertixNFT.initialize.selector, verificationServer),
-            "VertixNFT"
-        );
-
         // Deploy Escrow
         address escrowImpl = address(new VertixEscrow());
         addresses.escrow = deployProxy(
@@ -95,6 +87,14 @@ contract DeployVertix is Script {
                 verificationServer
             ),
             "VertixGovernance"
+        );
+
+        // Deploy VertixNFT (after governance is deployed)
+        address vertixNftImpl = address(new VertixNFT());
+        addresses.nft = deployProxy(
+            vertixNftImpl,
+            abi.encodeWithSelector(VertixNFT.initialize.selector, addresses.governance),
+            "VertixNFT"
         );
 
         return addresses;
@@ -167,6 +167,7 @@ contract DeployVertix is Script {
             addresses.governance,
             addresses.escrow
         );
+        MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceProxy, true);
         MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceCoreImpl, true);
         MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceAuctionsImpl, true);
         console.log("MarketplaceStorage setup complete.");

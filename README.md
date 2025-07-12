@@ -53,7 +53,7 @@ make install
 Compile Contracts
 
 ```
-forge build
+forge build --sizes
 ```
 
 ## Run Tests
@@ -65,12 +65,20 @@ forge test
 Deploy to Polygon or Base:
 
 ```
-make deployNftMarketplacePolygon
+ make deploy ARGS="--network polygon-testnet"
 ```
 or
 
 ```
-make deployNftMarketplaceBase
+make deploy ARGS="--network base-testnet"
+```
+
+or
+
+Run you can run `anvil` for local testing
+
+```
+make deploy ARGS="--network anvil"
 ```
 
 ## Interact with Contracts
@@ -81,9 +89,30 @@ cast call <contract-address> "<function-signature>" --rpc-url $POLYGON_RPC_URL
 ```
 
 ## Contract Structure
-- **Marketplace.sol**: Core marketplace for minting, trading, borrowing, and staking NFTs.
 
-- **Escrow.sol**: Manages secure escrow for manual asset transfers.
+### Core Marketplace Contracts
+- **MarketplaceCore.sol**: Core marketplace functionality for listing, buying, and managing NFT and non-NFT assets
+- **MarketplaceStorage.sol**: Storage contract for marketplace listings and data management
+- **MarketplaceFees.sol**: Fee calculation and distribution system for marketplace transactions
+- **MarketplaceAuctions.sol**: Auction functionality for marketplace assets
+- **MarketplaceProxy.sol**: Proxy contract for marketplace implementation upgrades
+
+### NFT & Asset Management
+- **VertixNFT.sol**: ERC721 NFT contract with social media integration and verification
+- **VertixEscrow.sol**: Secure escrow system for manual asset transfers and dispute resolution
+- **VertixGovernance.sol**: Governance contract for platform management and configuration
+
+### Cross-Chain Infrastructure
+- **CrossChainBridge.sol**: Bridge contract for cross-chain asset transfers using LayerZero
+- **CrossChainRegistry.sol**: Registry for managing cross-chain configurations and validations
+
+### Supporting Contracts
+- **VertixUtils.sol**: Utility library for common functions and data structures
+- **Interfaces/**: Contract interfaces for external integrations
+  - **ICrossChainBridge.sol**: Cross-chain bridge interface
+  - **IVertixNFT.sol**: NFT contract interface
+  - **IVertixEscrow.sol**: Escrow contract interface
+  - **IVertixGovernance.sol**: Governance contract interface
 
 
 ## Testing
@@ -102,4 +131,4 @@ forge test --mc <contract name>
 This project is licensed under the MIT License. See the LICENSE (./LICENSE) file for details.
 
 ## Contact
-For inquiries, reach out via Vertix Discord or Vertix Twitter.
+For inquiries, reach out via Email or [X](https://x.com/vertix_market).

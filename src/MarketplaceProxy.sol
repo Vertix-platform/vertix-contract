@@ -36,24 +36,39 @@ contract MarketplaceProxy {
      * This allows for a single entry point for all marketplace operations.
      */
     fallback() external payable {
-        // Attempt to delegatecall to MarketplaceCore
-        (bool success, bytes memory returndata) = marketplaceCoreAddress.delegatecall(msg.data);
-
-        // If core call failed, try MarketplaceAuctions
-        if (!success) {
-            (success, returndata) = marketplaceAuctionsAddress.delegatecall(msg.data);
+        // Get function selector from calldata
+        bytes4 selector;
+        assembly {
+            selector := calldataload(0)
         }
 
-        // Revert with returndata if both delegatecalls failed
-        if (!success) {
+        // Check if this is an auction-related function using dynamic selector calculation
+        bool isAuctionFunction = _isAuctionFunction(selector);
+
+        if (isAuctionFunction) {
+            // For auction functions, try MarketplaceAuctions first
+            (bool success, bytes memory returndata) = marketplaceAuctionsAddress.delegatecall(msg.data);
+            if (success) {
+                assembly {
+                    return(add(32, returndata), mload(returndata))
+                }
+            }
+            // If auction function fails, revert with the error
             assembly {
                 revert(add(32, returndata), mload(returndata))
             }
-        }
-
-        // Return returndata on success
-        assembly {
-            return(add(32, returndata), mload(returndata))
+        } else {
+            // For non-auction functions, try MarketplaceCore first
+            (bool success, bytes memory returndata) = marketplaceCoreAddress.delegatecall(msg.data);
+            if (success) {
+                assembly {
+                    return(add(32, returndata), mload(returndata))
+                }
+            }
+            // If core function fails, revert with the error (don't try auctions)
+            assembly {
+                revert(add(32, returndata), mload(returndata))
+            }
         }
     }
 
@@ -62,6 +77,26 @@ contract MarketplaceProxy {
      * This is a best practice when a contract has a payable fallback function.
      */
     receive() external payable {}
+
+    /*//////////////////////////////////////////////////////////////
+    *                          INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Dynamically checks if a function selector belongs to an auction function
+     * @param selector The function selector to check
+     * @return True if the function is auction-related
+     */
+    function _isAuctionFunction(bytes4 selector) internal pure returns (bool) {
+        return
+            selector == bytes4(keccak256("startNftAuction(address,uint256,uint96,uint256)")) ||
+            selector == bytes4(keccak256("startNonNftAuction(uint8,string,uint96,string,uint256)")) ||
+            selector == bytes4(keccak256("placeBid(uint256)")) ||
+            selector == bytes4(keccak256("endAuction(uint256)")) ||
+            selector == bytes4(keccak256("getAuctionInfo(uint256)")) ||
+            selector == bytes4(keccak256("isAuctionExpired(uint256)")) ||
+            selector == bytes4(keccak256("getTimeRemaining(uint256)"));
+    }
 
     /*//////////////////////////////////////////////////////////////
     *                          ADMIN FUNCTIONS

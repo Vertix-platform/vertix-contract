@@ -203,7 +203,13 @@ contract MarketplaceStorage {
     }
 
     function removeNftListingHash(address nftContractAddr, uint256 tokenId) external onlyAuthorized {
-        bytes32 hash = keccak256(abi.encodePacked(nftContractAddr, tokenId));
+        bytes32 hash;
+        assembly {
+            let ptr := mload(0x40)
+            mstore(ptr, nftContractAddr)
+            mstore(add(ptr, 0x20), tokenId)
+            hash := keccak256(ptr, 0x40)
+        }
         listingHashes[hash] = false;
     }
 

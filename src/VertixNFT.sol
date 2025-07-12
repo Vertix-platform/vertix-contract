@@ -88,7 +88,7 @@ contract VertixNFT is
     );
 
     // Constructor
-    function initialize(address _verificationServer) public initializer {
+    function initialize(address _governanceContract) public initializer {
         __ERC721_init("VertixNFT", "VNFT");
         __ERC721URIStorage_init();
         __ERC2981_init();
@@ -96,7 +96,7 @@ contract VertixNFT is
         __UUPSUpgradeable_init();
         _nextTokenId = 1;
         _nextCollectionId = 1;
-        governanceContract = IVertixGovernance(_verificationServer);
+        governanceContract = IVertixGovernance(_governanceContract);
     }
 
     // UUPS upgradeability
