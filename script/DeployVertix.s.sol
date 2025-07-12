@@ -6,12 +6,14 @@ import {console} from "forge-std/console.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 import {VertixNFT} from "../src/VertixNFT.sol";
 import {VertixGovernance} from "../src/VertixGovernance.sol";
-import {VertixEscrow} from "../src/VertixEscrow.sol"; // Using VertixEscrow as per your trace
-import {MarketplaceStorage} from "../src/MarketplaceStorage.sol"; // Import MarketplaceStorage
+import {VertixEscrow} from "../src/VertixEscrow.sol";
+import {MarketplaceStorage} from "../src/MarketplaceStorage.sol";
 import {MarketplaceCore} from "../src/MarketplaceCore.sol";
 import {MarketplaceAuctions} from "../src/MarketplaceAuctions.sol";
 import {MarketplaceFees} from "../src/MarketplaceFees.sol";
 import {MarketplaceProxy} from "../src/MarketplaceProxy.sol";
+import {CrossChainRegistry} from "../src/CrossChainRegistry.sol";
+import {CrossChainBridge} from "../src/CrossChainBridge.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployVertix is Script {
@@ -20,148 +22,174 @@ contract DeployVertix is Script {
         address governance;
         address escrow;
         address marketplaceProxy;
-        address marketplaceCoreImpl;     // Stores implementation address
-        address marketplaceAuctionsImpl; // Stores implementation address
+        address marketplaceCoreImpl;
+        address marketplaceAuctionsImpl;
         address marketplaceFees;
         address marketplaceStorage;
+        address crossChainRegistry;
+        address crossChainBridge;
         address verificationServer;
         address feeRecipient;
     }
 
-    /// @notice Deploys all Vertix contracts and links them appropriately.
-    /// @param vertixAddresses A struct containing all deployed contract addresses.
-    /// @return vertixAddresses The populated struct with all deployed contract addresses.
     function deployVertix() public returns (VertixAddresses memory vertixAddresses) {
         HelperConfig helperConfig = new HelperConfig();
-        (address verificationServer, address feeRecipient, uint256 deployerKey) = helperConfig.activeNetworkConfig();
+        (address verificationServer, address feeRecipient, address layerZeroEndpoint, uint8 chainType, uint256 deployerKey) = helperConfig.activeNetworkConfig();
 
         vm.startBroadcast(deployerKey);
 
-        // Deploy MarketplaceStorage
-        address marketplaceStorage = address(new MarketplaceStorage(msg.sender)); // Pass deployer as initial owner
-        vertixAddresses.marketplaceStorage = marketplaceStorage;
-        console.log("MarketplaceStorage deployed at:", marketplaceStorage);
+        // Deploy contracts in stages to reduce stack depth
+        vertixAddresses = _deployInitialContracts(deployerKey, verificationServer, feeRecipient);
+        _deployMarketplaceComponents(vertixAddresses);
+        _deployCrossChainComponents(vertixAddresses, layerZeroEndpoint, chainType);
+        _setupContracts(vertixAddresses, chainType);
 
-        // Deploy VertixNFT (Implementation and Proxy)
+        vm.stopBroadcast();
+
+        // Set additional addresses
+        vertixAddresses.verificationServer = verificationServer;
+        vertixAddresses.feeRecipient = feeRecipient;
+        return vertixAddresses;
+    }
+
+    function _deployInitialContracts(
+        uint256 deployerKey,
+        address verificationServer,
+        address feeRecipient
+    ) internal returns (VertixAddresses memory) {
+        VertixAddresses memory addresses;
+
+        // Deploy MarketplaceStorage
+        addresses.marketplaceStorage = address(new MarketplaceStorage(vm.addr(deployerKey)));
+        console.log("MarketplaceStorage deployed at:", addresses.marketplaceStorage);
+
+        // Deploy CrossChainRegistry
+        addresses.crossChainRegistry = address(new CrossChainRegistry(vm.addr(deployerKey), addresses.marketplaceStorage));
+        console.log("CrossChainRegistry deployed at:", addresses.crossChainRegistry);
+
+        // Deploy VertixNFT
         address vertixNftImpl = address(new VertixNFT());
-        vertixAddresses.nft = deployProxy(
+        addresses.nft = deployProxy(
             vertixNftImpl,
             abi.encodeWithSelector(VertixNFT.initialize.selector, verificationServer),
             "VertixNFT"
         );
 
-        // Deploy Escrow (Implementation and Proxy)
+        // Deploy Escrow
         address escrowImpl = address(new VertixEscrow());
-        vertixAddresses.escrow = deployProxy(
+        addresses.escrow = deployProxy(
             escrowImpl,
             abi.encodeWithSelector(VertixEscrow.initialize.selector),
             "VertixEscrow"
         );
 
-        // Deploy VertixGovernance (Implementation and Proxy)
-        // We temporarily pass address(0) for the marketplace and update it later.
+        // Deploy Governance
         address governanceImpl = address(new VertixGovernance());
-        vertixAddresses.governance = deployProxy(
+        addresses.governance = deployProxy(
             governanceImpl,
             abi.encodeWithSelector(
                 VertixGovernance.initialize.selector,
-                address(0),
-                vertixAddresses.escrow,
+                address(0), // Temporary, will set later
+                addresses.escrow,
                 feeRecipient,
                 verificationServer
             ),
             "VertixGovernance"
         );
 
-        // Deploy MarketplaceFees (Implementation)
-        // MarketplaceFees takes governance and escrow in its constructor (immutable).
-        // It's not proxied in this setup, as its logic is considered stable.
-        address marketplaceFeesImpl = address(new MarketplaceFees(vertixAddresses.governance, vertixAddresses.escrow));
-        vertixAddresses.marketplaceFees = marketplaceFeesImpl;
-        console.log("MarketplaceFees deployed at:", vertixAddresses.marketplaceFees);
-
-
-        // Deploy MarketplaceCore *Implementation*
-        // Its immutable dependencies (storage, fees, governance) are now known.
-        address marketplaceCoreImpl = address(
-            new MarketplaceCore(
-                vertixAddresses.marketplaceStorage,
-                vertixAddresses.marketplaceFees,
-                vertixAddresses.governance
-            )
-        );
-        vertixAddresses.marketplaceCoreImpl = marketplaceCoreImpl;
-        console.log("MarketplaceCore implementation deployed at:", marketplaceCoreImpl);
-
-        // Deploy MarketplaceAuctions *Implementation*
-        // Its immutable dependencies (storage, governance, escrow, fees) are now known.
-        address marketplaceAuctionsImpl = address(
-            new MarketplaceAuctions(
-                vertixAddresses.marketplaceStorage,
-                vertixAddresses.governance,
-                vertixAddresses.escrow,
-                vertixAddresses.marketplaceFees
-            )
-        );
-        vertixAddresses.marketplaceAuctionsImpl = marketplaceAuctionsImpl;
-        console.log("MarketplaceAuctions implementation deployed at:", marketplaceAuctionsImpl);
-
-        // Deploy the main MarketplaceProxy
-        // This proxy points to the *implementations* of Core and Auctions.
-        vertixAddresses.marketplaceProxy = address(new MarketplaceProxy(marketplaceCoreImpl, marketplaceAuctionsImpl));
-        console.log("Main MarketplaceProxy deployed at:", vertixAddresses.marketplaceProxy);
-
-        // Call `initialize` on MarketplaceCore *through the MarketplaceProxy*.
-        // Only initialize the primary contract (MarketplaceCore) via the proxy.
-        // This sets the `_initialized` flag in the proxy's storage.
-        MarketplaceCore(payable(vertixAddresses.marketplaceProxy)).initialize();
-        console.log("MarketplaceCore initialized via proxy.");
-
-        // Set essential contracts in MarketplaceStorage
-        // Authorize the deployed marketplace proxy and the core/auctions implementations if needed
-        // The `setContracts` in MarketplaceStorage needs to be called by its owner.
-        // In this script, `msg.sender` (the deployer) is the owner of MarketplaceStorage.
-        MarketplaceStorage(marketplaceStorage).setContracts(
-            vertixAddresses.nft,             // VertixNFT proxy
-            vertixAddresses.governance,      // VertixGovernance proxy
-            vertixAddresses.escrow           // VertixEscrow proxy
-        );
-        console.log("MarketplaceStorage essential contracts set.");
-
-        // Authorize MarketplaceCore and MarketplaceAuctions implementations in MarketplaceStorage
-        // This allows them to call `onlyAuthorized` functions in storage.
-        MarketplaceStorage(marketplaceStorage).authorizeContract(vertixAddresses.marketplaceCoreImpl, true);
-        MarketplaceStorage(marketplaceStorage).authorizeContract(vertixAddresses.marketplaceAuctionsImpl, true);
-        console.log("MarketplaceCore and MarketplaceAuctions implementations authorized in Storage.");
-
-
-        // Update VertixGovernance with the main marketplace proxy address.
-        // This is done via the Governance proxy.
-        VertixGovernance(vertixAddresses.governance).setMarketplace(vertixAddresses.marketplaceProxy);
-        console.log("VertixGovernance marketplace set to:", vertixAddresses.marketplaceProxy);
-
-        // add VertixNFT contract as supported NFT contract
-        VertixGovernance(vertixAddresses.governance).addSupportedNftContract(vertixAddresses.nft);
-
-        // Transfer Escrow ownership to governance.
-        // This is done via the Escrow proxy.
-        VertixEscrow(vertixAddresses.escrow).transferOwnership(vertixAddresses.governance);
-        console.log("Escrow ownership transferred to:", vertixAddresses.governance);
-
-        // Stop broadcasting transactions.
-        vm.stopBroadcast();
-
-        // Return all deployed addresses.
-        vertixAddresses.verificationServer = verificationServer;
-        vertixAddresses.feeRecipient = feeRecipient;
-        return vertixAddresses;
+        return addresses;
     }
 
-    /// @notice Helper function to deploy an ERC1967Proxy for an implementation contract.
-    /// @param impl The address of the implementation contract.
-    /// @param initData The encoded call to the `initialize` function (or constructor) of the implementation.
-    /// @param name A descriptive name for logging.
-    /// @return proxy The address of the deployed proxy.
+    function _deployMarketplaceComponents(VertixAddresses memory addresses) internal {
+        // Deploy MarketplaceFees
+        addresses.marketplaceFees = address(new MarketplaceFees(addresses.governance, addresses.escrow));
+        console.log("MarketplaceFees deployed at:", addresses.marketplaceFees);
+
+        // Deploy MarketplaceCore Implementation
+        addresses.marketplaceCoreImpl = address(
+            new MarketplaceCore(
+                addresses.marketplaceStorage,
+                addresses.marketplaceFees,
+                addresses.governance
+            )
+        );
+        console.log("MarketplaceCore implementation deployed at:", addresses.marketplaceCoreImpl);
+
+        // Deploy MarketplaceAuctions Implementation
+        addresses.marketplaceAuctionsImpl = address(
+            new MarketplaceAuctions(
+                addresses.marketplaceStorage,
+                addresses.governance,
+                addresses.escrow,
+                addresses.marketplaceFees
+            )
+        );
+        console.log("MarketplaceAuctions implementation deployed at:", addresses.marketplaceAuctionsImpl);
+
+        // Deploy MarketplaceProxy
+        addresses.marketplaceProxy = address(new MarketplaceProxy(
+            addresses.marketplaceCoreImpl,
+            addresses.marketplaceAuctionsImpl
+        ));
+        console.log("Main MarketplaceProxy deployed at:", addresses.marketplaceProxy);
+    }
+
+    function _deployCrossChainComponents(
+        VertixAddresses memory addresses,
+        address layerZeroEndpoint,
+        uint8 chainType
+    ) internal {
+        // Deploy CrossChainBridge
+        address crossChainBridgeImpl = address(new CrossChainBridge(
+            addresses.crossChainRegistry,
+            addresses.governance
+        ));
+        addresses.crossChainBridge = deployProxy(
+            crossChainBridgeImpl,
+            abi.encodeWithSelector(
+                CrossChainBridge.initialize.selector,
+                layerZeroEndpoint,
+                chainType,
+                0.01 ether
+            ),
+            "CrossChainBridge"
+        );
+    }
+
+    function _setupContracts(VertixAddresses memory addresses, uint8 chainType) internal {
+        // Initialize MarketplaceCore via proxy
+        MarketplaceCore(payable(addresses.marketplaceProxy)).initialize();
+        console.log("MarketplaceCore initialized via proxy.");
+
+        // Setup MarketplaceStorage
+        MarketplaceStorage(addresses.marketplaceStorage).setContracts(
+            addresses.nft,
+            addresses.governance,
+            addresses.escrow
+        );
+        MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceCoreImpl, true);
+        MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceAuctionsImpl, true);
+        console.log("MarketplaceStorage setup complete.");
+
+        // Setup CrossChainRegistry
+        CrossChainRegistry(addresses.crossChainRegistry).authorizeContract(addresses.crossChainBridge, true);
+        CrossChainRegistry(addresses.crossChainRegistry).setChainConfig(
+            chainType,
+            addresses.crossChainBridge,
+            addresses.governance,
+            12, // confirmationBlocks
+            50, // feeBps (0.5%)
+            true // isActive
+        );
+        console.log("CrossChainRegistry setup complete.");
+
+        // Final Governance setup
+        VertixGovernance(addresses.governance).setMarketplace(addresses.marketplaceProxy);
+        VertixGovernance(addresses.governance).addSupportedNftContract(addresses.nft);
+        VertixEscrow(addresses.escrow).transferOwnership(addresses.governance);
+        console.log("Governance setup complete.");
+    }
+
     function deployProxy(address impl, bytes memory initData, string memory name) internal returns (address proxy) {
         console.log(string.concat(name, " implementation deployed at:"), impl);
         proxy = address(new ERC1967Proxy(impl, initData));

@@ -10,6 +10,8 @@ contract HelperConfig is Script {
     struct NetworkConfig {
         address verificationServer;
         address feeRecipient;
+        address layerZeroEndpoint;
+        uint8 chainType;
         uint256 deployerKey;
     }
 
@@ -51,6 +53,8 @@ contract HelperConfig is Script {
         return NetworkConfig({
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0x66A71Dcef29A0fFBDBE3c6a460a3B5BC225Cd675,
+            chainType: 2, // Ethereum
             deployerKey: deployerKey
         });
     }
@@ -64,6 +68,8 @@ contract HelperConfig is Script {
         return NetworkConfig({
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0x3c2269811836af69497E5F486A85D7316753cf62,
+            chainType: 0, // Polygon
             deployerKey: deployerKey
         });
     }
@@ -76,6 +82,8 @@ contract HelperConfig is Script {
         return NetworkConfig({
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0xf69186dfBa60DdB133E91E9A4B5673624293d8F8,
+            chainType: 0, // Polygon
             deployerKey: deployerKey
         });
     }
@@ -89,6 +97,8 @@ contract HelperConfig is Script {
         return NetworkConfig({
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0xb6319cC6c8c27A8F5dAF0dD3DF91EA35C4720dd7,
+            chainType: 1, // Base
             deployerKey: deployerKey
         });
     }
@@ -102,6 +112,8 @@ contract HelperConfig is Script {
         return NetworkConfig({
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
+            chainType: 1, // Base
             deployerKey: deployerKey
         });
     }
@@ -115,6 +127,8 @@ contract HelperConfig is Script {
         return NetworkConfig({
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0x4d73AdB72bC3Dd36896663d8A3de7412eAa4b4eD,
+            chainType: 2, // Ethereum
             deployerKey: deployerKey
         });
     }
@@ -129,11 +143,14 @@ contract HelperConfig is Script {
         vm.startBroadcast(deployerKey);
         address verificationServer = makeAddr("verificationServer");
         address feeRecipient = makeAddr("feeRecipient");
+        address layerZeroEndpoint = makeAddr("layerZeroEndpoint");
         vm.stopBroadcast();
 
         return NetworkConfig({
             verificationServer: verificationServer,
             feeRecipient: feeRecipient,
+            layerZeroEndpoint: layerZeroEndpoint,
+            chainType: 0, // Default to Polygon for local testing
             deployerKey: deployerKey
         });
     }

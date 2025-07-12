@@ -331,17 +331,10 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
      * @dev Get auction details
      */
     function getAuctionInfo(uint256 auctionId) external view returns (
-        bool active,
-        bool isNft,
-        uint256 startTime,
-        uint24 duration,
-        uint256 endTime,
-        address seller,
-        address highestBidder,
-        uint256 highestBid,
-        uint256 startingPrice
+        MarketplaceStorage.AuctionDetailsView memory auction,
+        uint256 endTime
     ) {
-        MarketplaceStorage.AuctionDetailsView memory auction = STORAGE_CONTRACT.getAuctionDetailsView(auctionId);
+        auction = STORAGE_CONTRACT.getAuctionDetailsView(auctionId);
 
         unchecked {
             endTime = auction.startTime + auction.duration;
