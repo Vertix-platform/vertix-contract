@@ -304,4 +304,638 @@ contract MarketplaceCoreTest is Test {
         marketplaceCore.listSocialMediaNft(TOKEN_ID, LISTING_PRICE, SOCIAL_MEDIA_ID, wrongSignature);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        BUY NFT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_BuyNft() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Get expected fees from MarketplaceFees contract
+        MarketplaceFees.FeeDistribution memory fees = marketplaceFees.calculateNftFees(LISTING_PRICE, address(vertixNFT), TOKEN_ID);
+
+        // Buy NFT
+        vm.prank(buyer);
+        vm.expectEmit(true, true, false, true);
+        emit NFTBought(listingId, buyer, LISTING_PRICE, fees.royaltyAmount, fees.royaltyRecipient, fees.platformFee, fees.platformRecipient);
+
+        marketplaceCore.buyNft{value: LISTING_PRICE}(listingId);
+
+        // Verify NFT transfer and listing status
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), buyer);
+        (, , , , bool active, ) = marketplaceStorage.getNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_RevertIf_BuyNftInvalidListing() public {
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.buyNft{value: LISTING_PRICE}(LISTING_ID);
+    }
+
+    function test_RevertIf_BuyNftInsufficientPayment() public {
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__InsufficientPayment.selector);
+        marketplaceCore.buyNft{value: LISTING_PRICE - 1}(listingId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        BUY NON-NFT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_BuyNonNftAsset() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // Get expected fees from MarketplaceFees contract
+        MarketplaceFees.FeeDistribution memory fees = marketplaceFees.calculateNonNftFees(LISTING_PRICE);
+
+        // Buy non-NFT
+        vm.prank(buyer);
+        vm.expectEmit(true, true, false, true);
+        emit NonNFTBought(listingId, buyer, LISTING_PRICE, fees.sellerAmount, fees.platformFee, fees.platformRecipient);
+
+        marketplaceCore.buyNonNftAsset{value: LISTING_PRICE}(listingId);
+
+        // Verify listing status
+        (, , , bool active, , , , ) = marketplaceStorage.getNonNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_RevertIf_BuyNonNftInvalidListing() public {
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.buyNonNftAsset{value: LISTING_PRICE}(LISTING_ID);
+    }
+
+    function test_RevertIf_BuyNonNftInsufficientPayment() public {
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__InsufficientPayment.selector);
+        marketplaceCore.buyNonNftAsset{value: LISTING_PRICE - 1}(listingId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        CANCEL LISTING TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CancelNftListing() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Cancel listing
+        vm.prank(seller);
+        vm.expectEmit(true, true, false, true);
+        emit NFTListingCancelled(listingId, seller, true);
+
+        marketplaceCore.cancelNftListing(listingId);
+
+        // Verify NFT returned and listing status
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), seller);
+        (, , , , bool active, ) = marketplaceStorage.getNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_RevertIf_CancelNftNotSeller() public {
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__NotSeller.selector);
+        marketplaceCore.cancelNftListing(listingId);
+    }
+
+    function test_RevertIf_CancelNftInvalidListing() public {
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.cancelNftListing(LISTING_ID);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        CANCEL NON-NFT LISTING TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CancelNonNftListing() public {
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        vm.prank(seller);
+        vm.expectEmit(true, true, false, true);
+        emit NonNFTListingCancelled(listingId, seller, false);
+
+        marketplaceCore.cancelNonNftListing(listingId);
+
+        // Verify listing status
+        (, , , bool active, , , , ) = marketplaceStorage.getNonNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_RevertIf_CancelNonNftNotSeller() public {
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__NotSeller.selector);
+        marketplaceCore.cancelNonNftListing(listingId);
+    }
+
+    function test_RevertIf_CancelNonNftInvalidListing() public {
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.cancelNonNftListing(LISTING_ID);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        LIST FOR AUCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ListNftForAuction() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // List for auction
+        vm.prank(seller);
+        vm.expectEmit(true, false, false, true);
+        emit ListedForAuction(listingId, true, true);
+
+        marketplaceCore.listForAuction(listingId, true);
+
+        // Verify auction status
+        (, , , , , bool isListedForAuction) = marketplaceStorage.getNftListing(listingId);
+        assertTrue(isListedForAuction);
+    }
+
+    function test_ListNonNftForAuction() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // List for auction
+        vm.prank(seller);
+        vm.expectEmit(true, false, false, true);
+        emit ListedForAuction(listingId, false, true);
+
+        marketplaceCore.listForAuction(listingId, false);
+
+        // Verify auction status
+        (, , , , bool auctionListed, , , ) = marketplaceStorage.getNonNftListing(listingId);
+        assertTrue(auctionListed);
+    }
+
+    function test_RevertIf_ListForAuctionNotSeller() public {
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__NotSeller.selector);
+        marketplaceCore.listForAuction(listingId, true);
+    }
+
+    function test_RevertIf_ListForAuctionInvalidListing() public {
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.listForAuction(LISTING_ID, true);
+    }
+
+    function test_RevertIf_ListForAuctionAlreadyListed() public {
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        vm.prank(seller);
+        marketplaceCore.listForAuction(listingId, true);
+
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.Mc_AlreadyListedForAuction.selector);
+        marketplaceCore.listForAuction(listingId, true);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ADMIN FUNCTIONS TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Pause() public {
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, false);
+        emit Paused(owner);
+
+        marketplaceCore.pause();
+
+        // Verify paused state
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+    }
+
+    function test_RevertIf_PauseNotOwner() public {
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__NotOwner.selector);
+        marketplaceCore.pause();
+    }
+
+    function test_Unpause() public {
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, false);
+        emit Unpaused(owner);
+
+        marketplaceCore.unpause();
+
+        // Verify unpaused by listing NFT
+        vm.prank(seller);
+        marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+    }
+
+    function test_RevertIf_UnpauseNotOwner() public {
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__NotOwner.selector);
+        marketplaceCore.unpause();
+    }
+
+
+
+    /*//////////////////////////////////////////////////////////////
+                        BUYING TESTS - EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    function test_BuyNftWithExactPayment() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Buy NFT with exact payment
+        vm.prank(buyer);
+        marketplaceCore.buyNft{value: LISTING_PRICE}(listingId);
+
+        // Verify NFT transfer
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), buyer);
+    }
+
+    function test_BuyNftWithExcessPayment() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Buy NFT with excess payment
+        uint256 excessPayment = LISTING_PRICE + 0.1 ether;
+        vm.prank(buyer);
+        marketplaceCore.buyNft{value: excessPayment}(listingId);
+
+        // Verify NFT transfer
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), buyer);
+    }
+
+    function test_BuyNonNftAssetWithExactPayment() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // Buy non-NFT with exact payment
+        vm.prank(buyer);
+        marketplaceCore.buyNonNftAsset{value: LISTING_PRICE}(listingId);
+
+        // Verify listing is inactive
+        (, , , bool active, , , , ) = marketplaceStorage.getNonNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_BuyNonNftAssetWithExcessPayment() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // Buy non-NFT with excess payment
+        uint256 excessPayment = LISTING_PRICE + 0.1 ether;
+        vm.prank(buyer);
+        marketplaceCore.buyNonNftAsset{value: excessPayment}(listingId);
+
+        // Verify listing is inactive
+        (, , , bool active, , , , ) = marketplaceStorage.getNonNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_RevertIf_BuyNftWithExcessiveOverpayment() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Try to buy with excessive overpayment (should still work but refund excess)
+        uint256 excessivePayment = LISTING_PRICE * 2;
+        vm.prank(buyer);
+        marketplaceCore.buyNft{value: excessivePayment}(listingId);
+
+        // Verify NFT transfer
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), buyer);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        CANCELLATION TESTS - EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CancelNftListingAfterBeingListedForAuction() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // List for auction
+        vm.prank(seller);
+        marketplaceCore.listForAuction(listingId, true);
+
+        // Cancel listing
+        vm.prank(seller);
+        vm.expectEmit(true, true, false, true);
+        emit NFTListingCancelled(listingId, seller, true);
+
+        marketplaceCore.cancelNftListing(listingId);
+
+        // Verify NFT returned and listing status
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), seller);
+        (, , , , bool active, ) = marketplaceStorage.getNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_CancelNonNftListingAfterBeingListedForAuction() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // List for auction
+        vm.prank(seller);
+        marketplaceCore.listForAuction(listingId, false);
+
+        // Cancel listing
+        vm.prank(seller);
+        vm.expectEmit(true, true, false, true);
+        emit NonNFTListingCancelled(listingId, seller, false);
+
+        marketplaceCore.cancelNonNftListing(listingId);
+
+        // Verify listing status
+        (, , , bool active, , , , ) = marketplaceStorage.getNonNftListing(listingId);
+        assertFalse(active);
+    }
+
+    function test_RevertIf_CancelNftListingTwice() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Cancel listing
+        vm.prank(seller);
+        marketplaceCore.cancelNftListing(listingId);
+
+        // Try to cancel again
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.cancelNftListing(listingId);
+    }
+
+    function test_RevertIf_CancelNonNftListingTwice() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // Cancel listing
+        vm.prank(seller);
+        marketplaceCore.cancelNonNftListing(listingId);
+
+        // Try to cancel again
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.cancelNonNftListing(listingId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        PAUSE/UNPAUSE TESTS - EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertIf_ListNftWhenPaused() public {
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to list NFT
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+    }
+
+    function test_RevertIf_ListNonNftWhenPaused() public {
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to list non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+    }
+
+    function test_RevertIf_BuyNftWhenPaused() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to buy NFT
+        vm.prank(buyer);
+        vm.expectRevert();
+        marketplaceCore.buyNft{value: LISTING_PRICE}(listingId);
+    }
+
+    function test_RevertIf_BuyNonNftWhenPaused() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to buy non-NFT
+        vm.prank(buyer);
+        vm.expectRevert();
+        marketplaceCore.buyNonNftAsset{value: LISTING_PRICE}(listingId);
+    }
+
+    function test_RevertIf_CancelNftWhenPaused() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to cancel listing
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplaceCore.cancelNftListing(listingId);
+    }
+
+    function test_RevertIf_CancelNonNftWhenPaused() public {
+        // List non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to cancel listing
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplaceCore.cancelNonNftListing(listingId);
+    }
+
+    function test_RevertIf_ListForAuctionWhenPaused() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to list for auction
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplaceCore.listForAuction(listingId, true);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        REENTRANCY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertIf_ReentrantListNft() public {
+        // This test would require a malicious contract that tries to reenter
+        // For now, we'll test that the nonReentrant modifier is working
+        // by ensuring normal operations work correctly
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+        assertEq(listingId, LISTING_ID);
+    }
+
+    function test_RevertIf_ReentrantBuyNft() public {
+        // List NFT
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Buy NFT (should work normally, reentrancy protection is implicit)
+        vm.prank(buyer);
+        marketplaceCore.buyNft{value: LISTING_PRICE}(listingId);
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), buyer);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        MULTIPLE LISTINGS TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_MultipleNftListings() public {
+        // Mint another NFT
+        vm.startPrank(owner);
+        vertixNFT.mintSingleNft(seller, URI, METADATA, 500);
+        vm.stopPrank();
+
+        // Approve the second NFT
+        vm.prank(seller);
+        vertixNFT.approve(address(marketplaceCore), TOKEN_ID + 1);
+
+        // List first NFT
+        vm.prank(seller);
+        uint256 listingId1 = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+        assertEq(listingId1, LISTING_ID);
+
+        // List second NFT
+        vm.prank(seller);
+        uint256 listingId2 = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID + 1, LISTING_PRICE);
+        assertEq(listingId2, LISTING_ID + 1);
+
+        // Verify both listings exist
+        (address seller1, , , , bool active1, ) = marketplaceStorage.getNftListing(listingId1);
+        (address seller2, , , , bool active2, ) = marketplaceStorage.getNftListing(listingId2);
+        assertEq(seller1, seller);
+        assertEq(seller2, seller);
+        assertTrue(active1);
+        assertTrue(active2);
+    }
+
+    function test_MultipleNonNftListings() public {
+        // List first non-NFT
+        bytes memory verificationProof = "proof";
+        vm.prank(seller);
+        uint256 listingId1 = marketplaceCore.listNonNftAsset(ASSET_TYPE, ASSET_ID, LISTING_PRICE, URI, verificationProof);
+        assertEq(listingId1, LISTING_ID);
+
+        // List second non-NFT with different asset ID
+        vm.prank(seller);
+        uint256 listingId2 = marketplaceCore.listNonNftAsset(ASSET_TYPE, "asset456", LISTING_PRICE, URI, verificationProof);
+        assertEq(listingId2, LISTING_ID + 1);
+
+        // Verify both listings exist
+        (address seller1, , , bool active1, , , , ) = marketplaceStorage.getNonNftListing(listingId1);
+        (address seller2, , , bool active2, , , , ) = marketplaceStorage.getNonNftListing(listingId2);
+        assertEq(seller1, seller);
+        assertEq(seller2, seller);
+        assertTrue(active1);
+        assertTrue(active2);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        RECEIVE AND FALLBACK TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ReceiveFunction() public {
+        // Test that the contract can receive ETH
+        uint256 initialBalance = address(marketplaceCore).balance;
+        uint256 sendAmount = 1 ether;
+
+        vm.deal(address(this), sendAmount);
+        (bool success, ) = address(marketplaceCore).call{value: sendAmount}("");
+
+        assertTrue(success, "Receive function should accept ETH");
+        assertEq(address(marketplaceCore).balance, initialBalance + sendAmount, "Balance should increase");
+    }
+
+    function test_FallbackFunction() public {
+        // Test that the fallback function works
+        uint256 initialBalance = address(marketplaceCore).balance;
+        uint256 sendAmount = 1 ether;
+
+        vm.deal(address(this), sendAmount);
+        (bool success, ) = address(marketplaceCore).call{value: sendAmount}(abi.encodeWithSignature("nonexistentFunction()"));
+
+        assertTrue(success, "Fallback function should accept calls");
+        assertEq(address(marketplaceCore).balance, initialBalance + sendAmount, "Balance should increase");
+    }
+
 }

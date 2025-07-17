@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {MarketplaceStorage} from "./MarketplaceStorage.sol";
+
 /**
  * @title MarketplaceProxy
  * @dev Main entry point for the marketplace, utilizing delegatecall to
  * forward calls to the core and auction logic contracts.
  */
 contract MarketplaceProxy {
+    error MP__InvalidCoreAddress();
+    error MP__InvalidAuctionsAddress();
+    error MP__FailedToGetStorageContract();
+    error MP__FailedToGetOwner();
+    error MP__NotAuthorized();
+
     /*//////////////////////////////////////////////////////////////
     *                           STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -18,8 +26,8 @@ contract MarketplaceProxy {
     //////////////////////////////////////////////////////////////*/
 
     constructor(address _marketplaceCoreAddress, address _marketplaceAuctionsAddress) {
-        require(_marketplaceCoreAddress != address(0), "MP__InvalidCoreAddress");
-        require(_marketplaceAuctionsAddress != address(0), "MP__InvalidAuctionsAddress");
+        if (_marketplaceCoreAddress == address(0)) revert MP__InvalidCoreAddress();
+        if (_marketplaceAuctionsAddress == address(0)) revert MP__InvalidAuctionsAddress();
 
         marketplaceCoreAddress = _marketplaceCoreAddress;
         marketplaceAuctionsAddress = _marketplaceAuctionsAddress;
@@ -89,8 +97,8 @@ contract MarketplaceProxy {
      */
     function _isAuctionFunction(bytes4 selector) internal pure returns (bool) {
         return
-            selector == bytes4(keccak256("startNftAuction(address,uint256,uint96,uint256)")) ||
-            selector == bytes4(keccak256("startNonNftAuction(uint8,string,uint96,string,uint256)")) ||
+            selector == bytes4(keccak256("startNftAuction(uint256,uint24,uint96)")) ||
+            selector == bytes4(keccak256("startNonNftAuction(uint256,uint24,uint96)")) ||
             selector == bytes4(keccak256("placeBid(uint256)")) ||
             selector == bytes4(keccak256("endAuction(uint256)")) ||
             selector == bytes4(keccak256("getAuctionInfo(uint256)")) ||
@@ -104,29 +112,58 @@ contract MarketplaceProxy {
 
     /**
      * @dev Updates the address of the MarketplaceCore contract.
-     * Only callable by the current MarketplaceCore contract (acting as owner via delegatecall).
+     * Only callable by the owner of the MarketplaceStorage contract.
      * @param _newMarketplaceCoreAddress The new address for MarketplaceCore.
      */
     function updateMarketplaceCoreAddress(address _newMarketplaceCoreAddress) external {
-        // The actual access control logic (e.g., owner check) is handled by
-        // the target implementation contract (MarketplaceCore) during the delegatecall.
-        // This function merely provides an entry point for the delegatecall.
-        (bool success, bytes memory returndata) = marketplaceCoreAddress.delegatecall(
-            abi.encodeWithSelector(this.updateMarketplaceCoreAddress.selector, _newMarketplaceCoreAddress)
+        if (_newMarketplaceCoreAddress == address(0)) revert MP__InvalidCoreAddress();
+
+
+        // Check if caller is the owner of the storage contract
+        // We need to get the storage contract address from the core contract
+        (bool success, bytes memory returndata) = marketplaceCoreAddress.staticcall(
+            abi.encodeWithSignature("STORAGE_CONTRACT()")
         );
-        require(success, string(returndata));
+        if(!success) revert MP__FailedToGetStorageContract();
+        address storageContract = abi.decode(returndata, (address));
+
+        // Check ownership
+        (success, returndata) = storageContract.staticcall(
+            abi.encodeWithSignature("owner()")
+        );
+        if(!success) revert MP__FailedToGetOwner();
+        address owner = abi.decode(returndata, (address));
+        if(msg.sender != owner) revert MP__NotAuthorized();
+
+        // Update the proxys state variable
+        marketplaceCoreAddress = _newMarketplaceCoreAddress;
     }
 
     /**
      * @dev Updates the address of the MarketplaceAuctions contract.
-     * Only callable by the current MarketplaceCore contract (acting as owner via delegatecall).
+     * Only callable by the owner of the MarketplaceStorage contract.
      * @param _newMarketplaceAuctionsAddress The new address for MarketplaceAuctions.
      */
     function updateMarketplaceAuctionsAddress(address _newMarketplaceAuctionsAddress) external {
-        // The actual access control logic is handled by the target implementation contract.
-        (bool success, bytes memory returndata) = marketplaceCoreAddress.delegatecall(
-            abi.encodeWithSelector(this.updateMarketplaceAuctionsAddress.selector, _newMarketplaceAuctionsAddress)
+        if (_newMarketplaceAuctionsAddress == address(0)) revert MP__InvalidAuctionsAddress();
+
+        // Check if caller is the owner of the storage contract
+        // We need to get the storage contract address from the core contract
+        (bool success, bytes memory returndata) = marketplaceCoreAddress.staticcall(
+            abi.encodeWithSignature("STORAGE_CONTRACT()")
         );
-        require(success, string(returndata));
+        if(!success) revert MP__FailedToGetStorageContract();
+        address storageContract = abi.decode(returndata, (address));
+
+        // Check ownership
+        (success, returndata) = storageContract.staticcall(
+            abi.encodeWithSignature("owner()")
+        );
+        if(!success) revert MP__FailedToGetOwner();
+        address owner = abi.decode(returndata, (address));
+        if(msg.sender != owner) revert MP__NotAuthorized();
+
+        // Update the proxys state variable
+        marketplaceAuctionsAddress = _newMarketplaceAuctionsAddress;
     }
 }

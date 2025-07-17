@@ -181,6 +181,8 @@ contract MarketplaceStorage {
 
     function updateNftListingFlags(uint256 listingId, uint8 flags) external onlyAuthorized {
         nftListings[listingId].flags = flags;
+        // Update the listedForAuction mapping based on the auction flag (bit 1)
+        listedForAuction[listingId] = (flags & 2) == 2;
     }
 
     function getNftListing(uint256 listingId) external view returns (
@@ -243,6 +245,8 @@ contract MarketplaceStorage {
 
     function updateNonNftListingFlags(uint256 listingId, uint8 flags) external onlyAuthorized {
         nonNftListings[listingId].flags = flags;
+        // Update the listedForAuction mapping based on the auction flag (bit 1)
+        listedForAuction[listingId] = (flags & 2) == 2;
     }
 
     function getNonNftListing(uint256 listingId) external view returns (
@@ -365,6 +369,7 @@ contract MarketplaceStorage {
     function isTokenListedForAuction(uint256 tokenIdOrListingId) external view returns (bool) {
         return listedForAuction[tokenIdOrListingId];
     }
+
 
     function getBidsCount(uint256 auctionId) external view returns (uint256) {
         return bidsPlaced[auctionId].length;

@@ -185,7 +185,7 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         return _createNftListing(nftContractAddr, tokenId, price);
     }
 
-        /**
+    /**
      * @dev List an NFT for auction
      * @param listingId ID of the NFT
      * @param isNft true if NFT and false if non-NFT
@@ -286,7 +286,7 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
      * @dev Buy non-NFT asset with escrow
      * @param listingId ID of the listing
      */
-    function buyNonNftAsset(uint256 listingId) external payable nonReentrant whenNotPaused {
+    function buyNonNftAsset(uint256 listingId) external payable nonReentrant whenNotPaused returns (uint256) {
         (
             address seller,
             uint96 price,
@@ -327,6 +327,7 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
             fees.platformFee,
             fees.platformRecipient
         );
+        return listingId;
     }
 
     /*//////////////////////////////////////////////////////////////

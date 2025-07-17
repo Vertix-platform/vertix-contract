@@ -120,22 +120,20 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
     }
 
     /**
-     * @dev Common validation for auction listing access
+     * @dev Validate auction access requirements
      * @param seller Address of the seller
      * @param active Whether the listing is active
-     * @param auctionListed Whether the item is listed for auction
-     * @param alreadyInAuction Whether the item is already in an auction
+     * @param auctionListed Whether the listing is marked for auction
      */
     function _validateAuctionAccess(
         address seller,
         bool active,
         bool auctionListed,
-        bool alreadyInAuction
+        bool /*alreadyInAuction*/
     ) internal view {
         if (!active) revert MA__InvalidListing();
         if (msg.sender != seller) revert MA__NotSeller();
         if (!auctionListed) revert MA__NotListedForAuction();
-        if (alreadyInAuction) revert MA__AlreadyListedForAuction();
     }
 
     /**
@@ -159,6 +157,12 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
         uint8 assetType,
         string memory assetId
     ) internal returns (uint256 auctionId) {
+        // Check if an auction already exists for this listing/token
+        uint256 existingAuctionId = STORAGE_CONTRACT.auctionIdForTokenOrListing(tokenIdOrListingId);
+        if (existingAuctionId != 0) {
+            revert MA__AlreadyListedForAuction();
+        }
+
         auctionId = STORAGE_CONTRACT.createAuction(
             seller,
             tokenIdOrListingId,
@@ -186,12 +190,13 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
      * @param listingId ID of the NFT listing
      * @param duration Auction duration in seconds
      * @param startingPrice Starting price for auction
+     * @return auctionId The ID of the created auction
      */
     function startNftAuction(
         uint256 listingId,
         uint24 duration,
         uint96 startingPrice
-    ) external nonReentrant whenNotPaused {
+    ) external nonReentrant whenNotPaused returns (uint256 auctionId) {
         (
             address seller,
             address nftContractAddr,
@@ -205,7 +210,7 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
 
         _validateAuctionRequirements(duration, startingPrice);
 
-        _createAuction(seller, tokenId, startingPrice, duration, true, nftContractAddr, 0, "");
+        auctionId = _createAuction(seller, tokenId, startingPrice, duration, true, nftContractAddr, 0, "");
     }
 
     /**
@@ -213,12 +218,13 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
      * @param listingId ID of the non-NFT listing
      * @param duration Auction duration in seconds
      * @param startingPrice Starting price for auction
+     * @return auctionId The ID of the created auction
      */
     function startNonNftAuction(
         uint256 listingId,
         uint24 duration,
         uint96 startingPrice
-    ) external nonReentrant whenNotPaused {
+    ) external nonReentrant whenNotPaused returns (uint256 auctionId) {
         (
             address seller,
             ,
@@ -233,7 +239,7 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
 
         _validateAuctionRequirements(duration, startingPrice);
 
-        _createAuction(seller, listingId, startingPrice, duration, false, address(0), assetType, assetId);
+        auctionId = _createAuction(seller, listingId, startingPrice, duration, false, address(0), assetType, assetId);
     }
 
     /**
