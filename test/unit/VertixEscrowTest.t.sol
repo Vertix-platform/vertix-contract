@@ -3,14 +3,21 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {VertixEscrow} from "../../src/VertixEscrow.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {VertixEscrowV2Mock} from "../mocks/MockVertixEscrow.sol";
+import {DeployVertix} from "../../script/DeployVertix.s.sol";
 
 contract VertixEscrowTest is Test {
-    VertixEscrow public escrowImplementation;
-    VertixEscrow public escrow;
+    // DeployVertix script instance
+    DeployVertix public deployer;
 
-    address public owner = makeAddr("owner");
+    // Contract addresses from deployment
+    DeployVertix.VertixAddresses public vertixAddresses;
+
+    // Contract instances
+    VertixEscrow public escrow;
+    VertixEscrow public escrowImplementation;
+
+    address public owner;
     address public seller = makeAddr("seller");
     address public buyer = makeAddr("buyer");
     address public user = makeAddr("user");
@@ -27,20 +34,55 @@ contract VertixEscrowTest is Test {
     event DisputeResolved(uint256 indexed listingId, address indexed winner);
 
     function setUp() public {
-        // Deploy implementation contract
-        vm.startPrank(owner);
-        escrowImplementation = new VertixEscrow();
+        // Create deployer instance
+        deployer = new DeployVertix();
 
-        // Deploy proxy and initialize
-        ERC1967Proxy proxy =
-            new ERC1967Proxy(address(escrowImplementation), abi.encodeWithSelector(VertixEscrow.initialize.selector));
-        escrow = VertixEscrow(address(proxy));
-        vm.stopPrank();
+        // Deploy all contracts using the DeployVertix script
+        vertixAddresses = deployer.deployVertix();
+
+        // Get the escrow contract instance
+        escrow = VertixEscrow(vertixAddresses.escrow);
+
+        // Get the owner from the governance contract (which owns the escrow)
+        owner = address(vertixAddresses.governance);
 
         // Fund test accounts
         vm.deal(buyer, 10 ether);
         vm.deal(seller, 1 ether);
         vm.deal(user, 1 ether);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    HELPER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Helper function to get the escrow implementation address for upgrade testing
+     */
+    function getEscrowImplementation() internal returns (address) {
+        // For upgrade testing, we need to deploy a new implementation
+        // since the DeployVertix script doesn't expose the implementation address
+        return address(new VertixEscrow());
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    DEPLOYMENT VERIFICATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_DeploymentVerification() public view {
+        // Verify all contracts were deployed
+        assertTrue(vertixAddresses.escrow != address(0), "Escrow not deployed");
+        assertTrue(vertixAddresses.governance != address(0), "Governance not deployed");
+        assertTrue(vertixAddresses.nft != address(0), "NFT not deployed");
+        assertTrue(vertixAddresses.marketplaceProxy != address(0), "Marketplace proxy not deployed");
+        assertTrue(vertixAddresses.marketplaceStorage != address(0), "Marketplace storage not deployed");
+        assertTrue(vertixAddresses.crossChainRegistry != address(0), "Cross-chain registry not deployed");
+        assertTrue(vertixAddresses.crossChainBridge != address(0), "Cross-chain bridge not deployed");
+
+        // Verify escrow is properly initialized
+        assertEq(escrow.owner(), owner, "Escrow owner should be governance");
+        assertEq(escrow.escrowDuration(), 7 days, "Escrow duration should be 7 days");
+        assertFalse(escrow.paused(), "Escrow should not be paused");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -625,12 +667,12 @@ contract VertixEscrowTest is Test {
     }
 
     function test_RevertIf_NonOwnerUpgrades() public {
-        // Deploy new implementation
-        VertixEscrow newImplementation = new VertixEscrow();
+        // Deploy new implementation using helper function
+        address newImplementation = getEscrowImplementation();
 
         // Try to upgrade as non-owner
         vm.prank(user);
         vm.expectRevert();
-        escrow.upgradeToAndCall(address(newImplementation), "");
+        escrow.upgradeToAndCall(newImplementation, "");
     }
 }

@@ -3,9 +3,8 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {VertixNFT} from "../../src/VertixNFT.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import {VertixGovernance} from "../../src/VertixGovernance.sol";
+import {DeployVertix} from "../../script/DeployVertix.s.sol";
 
 contract VertixNFTV2Mock is VertixNFT {
     uint256 private newFeature;
@@ -20,13 +19,19 @@ contract VertixNFTV2Mock is VertixNFT {
 }
 
 contract VertixNFTTest is Test {
-    VertixNFT public nftImplementation;
+    // DeployVertix script instance
+    DeployVertix public deployer;
+
+    // Contract addresses from deployment
+    DeployVertix.VertixAddresses public vertixAddresses;
+
+    // Contract instances
     VertixNFT public nft;
 
-    address public owner = makeAddr("owner");
+    address public owner;
     address public creator = makeAddr("creator");
     address public user = makeAddr("user");
-    address public verificationServer = makeAddr("verificationServer");
+    address public verificationServer;
     uint256 public verificationServerPk; // Private key for verificationServer
     address public recipient = makeAddr("recipient");
 
@@ -69,48 +74,56 @@ contract VertixNFTTest is Test {
         uint96 royaltyBps
     );
 
-function setUp() public {
-    // Create a wallet for verificationServer to get a valid private key
-    (verificationServer, verificationServerPk) = makeAddrAndKey("verificationServer");
+    function setUp() public {
+        // Create a wallet for verificationServer to get a valid private key
+        (verificationServer, verificationServerPk) = makeAddrAndKey("verificationServer");
 
-    // Create test addresses
-    address marketplace = makeAddr("marketplace");
-    address escrow = makeAddr("escrow");
-    address feeRecipient = makeAddr("feeRecipient");
+        // Create deployer instance
+        deployer = new DeployVertix();
 
-    vm.startPrank(owner);
+        // Deploy all contracts using the DeployVertix script
+        vertixAddresses = deployer.deployVertix();
 
-    // Deploy governance implementation
-    VertixGovernance governanceImpl = new VertixGovernance();
+        // Get the NFT contract instance
+        nft = VertixNFT(vertixAddresses.nft);
 
-    // Deploy governance proxy and initialize
-    ERC1967Proxy governanceProxy = new ERC1967Proxy(
-        address(governanceImpl),
-        abi.encodeWithSelector(
-            VertixGovernance.initialize.selector,
-            marketplace,
-            escrow,
-            feeRecipient,
-            verificationServer
-        )
-    );
-    VertixGovernance governance = VertixGovernance(address(governanceProxy));
+        // Get the owner from the NFT contract
+        owner = nft.owner();
 
-    // Deploy NFT implementation
-    nftImplementation = new VertixNFT();
+        // Fund test accounts
+        vm.deal(creator, 1 ether);
+        vm.deal(user, 1 ether);
+        vm.deal(recipient, 1 ether);
+    }
 
-    // Deploy NFT proxy and initialize with governance address
-    ERC1967Proxy nftProxy = new ERC1967Proxy(
-        address(nftImplementation),
-        abi.encodeWithSelector(
-            VertixNFT.initialize.selector,
-            address(governance)  // Pass governance contract address
-        )
-    );
-    nft = VertixNFT(address(nftProxy));
+    /*//////////////////////////////////////////////////////////////
+                    HELPER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
-    vm.stopPrank();
-}
+    /**
+     * @dev Helper function to get the NFT implementation address for upgrade testing
+     */
+    function getNFTImplementation() internal returns (address) {
+        return address(new VertixNFT());
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    DEPLOYMENT VERIFICATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_DeploymentVerification() public view {
+        // Verify that the NFT contract was deployed correctly
+        assertTrue(vertixAddresses.nft != address(0), "NFT should be deployed");
+        assertTrue(vertixAddresses.governance != address(0), "Governance should be deployed");
+        assertTrue(vertixAddresses.escrow != address(0), "Escrow should be deployed");
+
+        // Verify that NFT has correct owner
+        assertEq(nft.owner(), owner, "NFT should have correct owner");
+
+        // Verify initial state
+        assertEq(nft.name(), "VertixNFT", "NFT should have correct name");
+        assertEq(nft.symbol(), "VNFT", "NFT should have correct symbol");
+    }
 
     /*//////////////////////////////////////////////////////////////
                     INITIALIZATION TESTS
