@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {VertixUtils} from "./libraries/VertixUtils.sol";
 import {IVertixNFT} from "./interfaces/IVertixNFT.sol";
+import {CrossChainRegistry} from "./CrossChainRegistry.sol";
 
 /**
  * @title MarketplaceStorage
@@ -20,6 +21,8 @@ contract MarketplaceStorage {
         uint96 price;            // supports up to ~79B ETH
         uint256 tokenId;
         uint8 flags;             // 1 byte: bit 0=active, bit 1=listedForAuction
+        uint8 originChain;       // Chain where the NFT was originally listed
+        bool isCrossChainListed; // Whether this listing is available cross-chain
     }
 
     struct NonNftListing {
@@ -75,6 +78,7 @@ contract MarketplaceStorage {
     IVertixNFT public vertixNftContract;
     address public governanceContract;
     address public escrowContract;
+    address public crossChainRegistry;
 
     uint256 public listingIdCounter = 1;
     uint256 public auctionIdCounter = 1;
@@ -149,6 +153,10 @@ contract MarketplaceStorage {
         escrowContract = _escrowContract;
     }
 
+    function setCrossChainRegistry(address _crossChainRegistry) external onlyOwner {
+        crossChainRegistry = _crossChainRegistry;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             NFT LISTINGS
     //////////////////////////////////////////////////////////////*/
@@ -166,7 +174,9 @@ contract MarketplaceStorage {
             nftContract: nftContractAddr,
             price: price,
             tokenId: tokenId,
-            flags: 1 // active = true
+            flags: 1, // active = true
+            originChain: 0, // Default to 0 (mainnet)
+            isCrossChainListed: false
         });
 
         bytes32 hash;
@@ -185,6 +195,10 @@ contract MarketplaceStorage {
         listedForAuction[listingId] = (flags & 2) == 2;
     }
 
+    function setCrossChainListing(uint256 listingId, bool isCrossChain) external onlyAuthorized {
+        nftListings[listingId].isCrossChainListed = isCrossChain;
+    }
+
     function getNftListing(uint256 listingId) external view returns (
         address seller,
         address nftContractAddr,
@@ -201,6 +215,27 @@ contract MarketplaceStorage {
             listing.price,
             (listing.flags & 1) == 1,
             (listing.flags & 2) == 2
+        );
+    }
+
+    function getNftListingWithChain(uint256 listingId) external view returns (
+        address seller,
+        address nftContract,
+        uint256 tokenId,
+        uint96 price,
+        uint8 flags,
+        uint8 originChain,
+        bool isCrossChainListed
+    ) {
+        NftListing memory listing = nftListings[listingId];
+        return (
+            listing.seller,
+            listing.nftContract,
+            listing.tokenId,
+            listing.price,
+            listing.flags,
+            listing.originChain,
+            listing.isCrossChainListed
         );
     }
 
@@ -381,5 +416,75 @@ contract MarketplaceStorage {
     ) {
         Bid memory bid = bidsPlaced[auctionId][bidIndex];
         return (uint256(bid.bidAmount), bid.bidId, bid.bidder);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        CROSS-CHAIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Register cross-chain asset for all supported chains
+     * @param nftContractAddr Address of the NFT contract
+     * @param tokenId ID of the NFT
+     * @param price Initial price
+     * @param originChainType Current chain type
+     */
+    function registerCrossChainAssetForAllChains(
+        address nftContractAddr,
+        uint256 tokenId,
+        uint96 price,
+        uint8 originChainType
+    ) external onlyAuthorized {
+        // Get CrossChainRegistry instance
+        CrossChainRegistry registry = CrossChainRegistry(crossChainRegistry);
+        
+        // Register for each supported chain (excluding current chain)
+        uint8[] memory supportedChains = getSupportedChains();
+        
+        for (uint256 i = 0; i < supportedChains.length; i++) {
+            uint8 targetChainType = supportedChains[i];
+            
+            // Skip if same as origin chain
+            if (targetChainType == originChainType) continue;
+            
+            // Register cross-chain asset
+            registry.registerCrossChainAsset(
+                nftContractAddr,
+                tokenId,
+                originChainType,
+                targetChainType,
+                address(0), // Target contract will be set on target chain
+                price
+            );
+        }
+    }
+
+    /**
+     * @dev Get array of supported chain types
+     * @return uint8[] Array of supported chain types
+     */
+    function getSupportedChains() public pure returns (uint8[] memory) {
+        uint8[] memory chains = new uint8[](3);
+        chains[0] = 0; // Polygon
+        chains[1] = 1; // Base
+        chains[2] = 2; // Ethereum
+        return chains;
+    }
+
+    /**
+     * @dev Determine current chain type based on block.chainid
+     * @return uint8 Chain type (0=Polygon, 1=Base, 2=Ethereum)
+     */
+    function getCurrentChainType() public view returns (uint8) {
+        if (block.chainid == 137 || block.chainid == 80001) {
+            return 0; // Polygon (VertixUtils.ChainType.Polygon)
+        } else if (block.chainid == 8453 || block.chainid == 84532) {
+            return 1; // Base (VertixUtils.ChainType.Base)
+        } else if (block.chainid == 1 || block.chainid == 11155111) {
+            return 2; // Ethereum (VertixUtils.ChainType.Ethereum)
+        } else {
+            // Default to Polygon for local testing (Anvil)
+            return 0;
+        }
     }
 }

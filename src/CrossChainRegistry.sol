@@ -71,6 +71,7 @@ contract CrossChainRegistry {
     //////////////////////////////////////////////////////////////*/
     address public owner;
     address public marketplaceStorage; // Added for non-NFT listing checks
+    uint8 public currentChainType; // Current chain type
     mapping(address => bool) public authorizedContracts;
 
     mapping(bytes32 => CrossChainAsset) public crossChainAssets;
@@ -156,6 +157,17 @@ contract CrossChainRegistry {
         marketplaceStorage = _marketplaceStorage;
         authorizedContracts[_owner] = true;
         lastGlobalSync = uint64(block.timestamp);
+        
+        // Initialize current chain type based on block.chainid
+        if (block.chainid == 137 || block.chainid == 80001) {
+            currentChainType = 0; // Polygon
+        } else if (block.chainid == 8453 || block.chainid == 84532) {
+            currentChainType = 1; // Base
+        } else if (block.chainid == 1 || block.chainid == 11155111) {
+            currentChainType = 2; // Ethereum
+        } else {
+            currentChainType = 0; // Default to Polygon for local testing
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -198,7 +210,12 @@ contract CrossChainRegistry {
         address targetContract,
         uint96 initialPrice
     ) external onlyAuthorized returns (bytes32 assetId) {
-        assetId = VertixUtils.createCrossChainAssetId(VertixUtils.ChainType(originChain), originContract, tokenId);
+        assetId = VertixUtils.createCrossChainAssetId(
+            VertixUtils.ChainType(originChain), 
+            VertixUtils.ChainType(targetChain), 
+            originContract, 
+            tokenId
+        );
         if (crossChainAssets[assetId].originContract != address(0)) revert CCR__AssetAlreadyExists();
 
         crossChainAssets[assetId] = CrossChainAsset({
@@ -309,7 +326,12 @@ contract CrossChainRegistry {
         totalBridgeRequests++;
 
         bytes32 crossChainAssetId = isNft
-            ? VertixUtils.createCrossChainAssetId(VertixUtils.ChainType(chainConfigs[targetChainType].lastBlockSynced), contractAddr, tokenId)
+            ? VertixUtils.createCrossChainAssetId(
+                VertixUtils.ChainType(chainConfigs[targetChainType].lastBlockSynced), 
+                VertixUtils.ChainType(targetChainType), 
+                contractAddr, 
+                tokenId
+              )
             : keccak256(abi.encodePacked(chainConfigs[targetChainType].lastBlockSynced, contractAddr, assetId));
 
         CrossChainAsset storage asset = crossChainAssets[crossChainAssetId];
@@ -337,9 +359,21 @@ contract CrossChainRegistry {
         string memory assetId,
         uint8 originChain
     ) external onlyAuthorized {
-        bytes32 crossChainAssetId = isNft
-            ? VertixUtils.createCrossChainAssetId(VertixUtils.ChainType(originChain), contractAddr, tokenId)
-            : keccak256(abi.encodePacked(originChain, contractAddr, assetId));
+        // For locking, we need to find the asset that was registered for this origin chain
+        // We'll try to find it by checking the assetToChainId mapping first
+        bytes32 crossChainAssetId = assetToChainId[contractAddr][tokenId];
+        
+        // If not found, try to create the asset ID using the old format for backward compatibility
+        if (crossChainAssetId == bytes32(0)) {
+            crossChainAssetId = isNft
+                ? VertixUtils.createCrossChainAssetId(
+                    VertixUtils.ChainType(originChain), 
+                    VertixUtils.ChainType(originChain), // For locking, we use origin chain as both
+                    contractAddr, 
+                    tokenId
+                  )
+                : keccak256(abi.encodePacked(originChain, contractAddr, assetId));
+        }
 
         CrossChainAsset storage asset = crossChainAssets[crossChainAssetId];
         if (asset.originContract == address(0)) revert CCR__AssetNotExists();
@@ -368,9 +402,21 @@ contract CrossChainRegistry {
         string memory assetId,
         uint8 sourceChain
     ) external onlyAuthorized {
-        bytes32 crossChainAssetId = isNft
-            ? VertixUtils.createCrossChainAssetId(VertixUtils.ChainType(sourceChain), contractAddr, tokenId)
-            : keccak256(abi.encodePacked(sourceChain, contractAddr, assetId));
+        // For unlocking, we need to find the asset that was registered
+        // We'll try to find it by checking the assetToChainId mapping first
+        bytes32 crossChainAssetId = assetToChainId[contractAddr][tokenId];
+        
+        // If not found, try to create the asset ID using the old format for backward compatibility
+        if (crossChainAssetId == bytes32(0)) {
+            crossChainAssetId = isNft
+                ? VertixUtils.createCrossChainAssetId(
+                    VertixUtils.ChainType(sourceChain), 
+                    VertixUtils.ChainType(currentChainType), 
+                    contractAddr, 
+                    tokenId
+                  )
+                : keccak256(abi.encodePacked(sourceChain, contractAddr, assetId));
+        }
 
         CrossChainAsset storage asset = crossChainAssets[crossChainAssetId];
         if (asset.originContract == address(0)) revert CCR__AssetNotExists();

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {MarketplaceStorage} from "./MarketplaceStorage.sol";
-
 /**
  * @title MarketplaceProxy
  * @dev Main entry point for the marketplace, utilizing delegatecall to

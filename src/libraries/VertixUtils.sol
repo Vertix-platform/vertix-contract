@@ -69,6 +69,23 @@ library VertixUtils {
 
     /**
      * @dev Create asset ID for cross-chain tracking
+     * @param originChainType Source chain type
+     * @param targetChainType Target chain type  
+     * @param contractAddr Contract address
+     * @param tokenId Token ID
+     * @return bytes32 unique asset identifier
+     */
+    function createCrossChainAssetId(
+        ChainType originChainType,
+        ChainType targetChainType,
+        address contractAddr,
+        uint256 tokenId
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(originChainType, targetChainType, contractAddr, tokenId));
+    }
+
+    /**
+     * @dev Create asset ID for cross-chain tracking (backward compatibility)
      * @param chainType Source chain type
      * @param contractAddr Contract address
      * @param tokenId Token ID

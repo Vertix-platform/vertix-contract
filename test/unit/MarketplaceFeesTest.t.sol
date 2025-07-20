@@ -9,10 +9,7 @@ import {MarketplaceStorage} from "../../src/MarketplaceStorage.sol";
 import {MarketplaceFees} from "../../src/MarketplaceFees.sol";
 import {VertixGovernance} from "../../src/VertixGovernance.sol";
 import {VertixNFT} from "../../src/VertixNFT.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+
 import {VertixUtils} from "../../src/libraries/VertixUtils.sol";
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 

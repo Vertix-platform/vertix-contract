@@ -69,7 +69,7 @@ contract HelperConfig is Script {
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             layerZeroEndpoint: 0x3c2269811836af69497E5F486A85D7316753cf62,
-            chainType: 0, // Polygon
+            chainType: 1, // Polygon (VertixUtils.ChainType.Polygon)
             deployerKey: deployerKey
         });
     }
@@ -83,7 +83,7 @@ contract HelperConfig is Script {
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             layerZeroEndpoint: 0xf69186dfBa60DdB133E91E9A4B5673624293d8F8,
-            chainType: 0, // Polygon
+            chainType: 1, // Polygon (VertixUtils.ChainType.Polygon)
             deployerKey: deployerKey
         });
     }
@@ -98,7 +98,7 @@ contract HelperConfig is Script {
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             layerZeroEndpoint: 0xb6319cC6c8c27A8F5dAF0dD3DF91EA35C4720dd7,
-            chainType: 1, // Base
+            chainType: 2, // Base (VertixUtils.ChainType.Base)
             deployerKey: deployerKey
         });
     }
@@ -113,7 +113,7 @@ contract HelperConfig is Script {
             verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
-            chainType: 1, // Base
+            chainType: 2, // Base (VertixUtils.ChainType.Base)
             deployerKey: deployerKey
         });
     }
@@ -150,7 +150,7 @@ contract HelperConfig is Script {
             verificationServer: verificationServer,
             feeRecipient: feeRecipient,
             layerZeroEndpoint: layerZeroEndpoint,
-            chainType: 0, // Default to Polygon for local testing
+            chainType: 1, // Polygon (VertixUtils.ChainType.Polygon) for local testing
             deployerKey: deployerKey
         });
     }

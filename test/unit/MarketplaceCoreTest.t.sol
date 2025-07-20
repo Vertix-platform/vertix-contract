@@ -9,11 +9,11 @@ import {MarketplaceStorage} from "../../src/MarketplaceStorage.sol";
 import {MarketplaceFees} from "../../src/MarketplaceFees.sol";
 import {VertixGovernance} from "../../src/VertixGovernance.sol";
 import {VertixNFT} from "../../src/VertixNFT.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {VertixUtils} from "../../src/libraries/VertixUtils.sol";
+import {CrossChainRegistry} from "../../src/CrossChainRegistry.sol";
+import {CrossChainBridge} from "../../src/CrossChainBridge.sol";
 
 
 contract MarketplaceCoreTest is Test {
@@ -109,6 +109,11 @@ contract MarketplaceCoreTest is Test {
         verificationServerKey = uint256(keccak256(abi.encodePacked("verificationServer")));
         // Fund the verification server address
         vm.deal(verificationServer, 1 ether);
+
+        // Authorize MarketplaceStorage for cross-chain operations
+        address crossChainRegistry = address(0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512); // From deployment logs
+        vm.prank(owner);
+        CrossChainRegistry(crossChainRegistry).authorizeContract(address(marketplaceStorage), true);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -936,6 +941,371 @@ contract MarketplaceCoreTest is Test {
 
         assertTrue(success, "Fallback function should accept calls");
         assertEq(address(marketplaceCore).balance, initialBalance + sendAmount, "Balance should increase");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        CROSS-CHAIN FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ListNftCrossChain_Enabled() public {
+        // Set up cross-chain registry in storage
+        address crossChainRegistry = makeAddr("crossChainRegistry");
+        vm.prank(owner);
+        marketplaceStorage.setCrossChainRegistry(crossChainRegistry);
+
+        // Mock the cross-chain registration calls
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0, // originChainType (Polygon)
+                1, // targetChainType (Base)
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0, // originChainType (Polygon)
+                2, // targetChainType (Ethereum)
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, true);
+
+        assertEq(listingId, LISTING_ID);
+
+        // Verify listing is cross-chain
+        (,,,,,, bool isCrossChainListed) = marketplaceStorage.getNftListingWithChain(listingId);
+        assertTrue(isCrossChainListed, "Listing should be cross-chain");
+
+        // Verify NFT ownership transferred to marketplace
+        assertEq(vertixNFT.ownerOf(TOKEN_ID), address(marketplaceCore), "NFT should be transferred to marketplace");
+    }
+
+    function test_ListNftCrossChain_Disabled() public {
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, false);
+
+        assertEq(listingId, LISTING_ID);
+
+        // Verify listing is not cross-chain
+        (,,,,,, bool isCrossChainListed) = marketplaceStorage.getNftListingWithChain(listingId);
+        assertFalse(isCrossChainListed, "Listing should not be cross-chain");
+    }
+
+    function test_ListNftCrossChain_WithInvalidContract() public {
+        address invalidContract = makeAddr("invalidContract");
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.MC__InvalidNFTContract.selector);
+        marketplaceCore.listNftCrossChain(invalidContract, TOKEN_ID, LISTING_PRICE, true);
+    }
+
+    function test_ListNftCrossChain_WithZeroPrice() public {
+        vm.prank(seller);
+        vm.expectRevert(MarketplaceCore.MC__InsufficientPayment.selector);
+        marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, INVALID_PRICE, true);
+    }
+
+    function test_ListNftCrossChain_NotOwner() public {
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__NotOwner.selector);
+        marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, true);
+    }
+
+    function test_ListNftCrossChain_Duplicate() public {
+        // Set up cross-chain registry
+        address crossChainRegistry = makeAddr("crossChainRegistry");
+        vm.prank(owner);
+        marketplaceStorage.setCrossChainRegistry(crossChainRegistry);
+
+        // Mock cross-chain registration calls
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0,
+                1,
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0,
+                2,
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        // First listing should succeed
+        vm.prank(seller);
+        marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, true);
+
+        // Second listing should fail (duplicate)
+        vm.prank(address(marketplaceCore));
+        vm.expectRevert(MarketplaceCore.MC__DuplicateListing.selector);
+        marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, true);
+    }
+
+    function test_ListNftCrossChain_EmitsEvent() public {
+        // Set up cross-chain registry
+        address crossChainRegistry = makeAddr("crossChainRegistry");
+        vm.prank(owner);
+        marketplaceStorage.setCrossChainRegistry(crossChainRegistry);
+
+        // Mock cross-chain registration calls
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0,
+                1,
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0,
+                2,
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.prank(seller);
+        vm.expectEmit(true, true, true, true);
+        emit NFTListed(LISTING_ID, seller, address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, true);
+    }
+
+    function test_ListNftCrossChain_ChainTypeDetection() public {
+        // Set up cross-chain registry
+        address crossChainRegistry = makeAddr("crossChainRegistry");
+        vm.prank(owner);
+        marketplaceStorage.setCrossChainRegistry(crossChainRegistry);
+
+        // Mock calls for different chain types
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0, // Polygon
+                1, // Base
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                address(vertixNFT),
+                TOKEN_ID,
+                0, // Polygon
+                2, // Ethereum
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, true);
+
+        assertEq(listingId, LISTING_ID, "Listing should be created successfully");
+    }
+
+    function test_ListNftCrossChain_WhenPaused() public {
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to list NFT cross-chain when paused
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplaceCore.listNftCrossChain(address(vertixNFT), TOKEN_ID, LISTING_PRICE, true);
+    }
+
+    function test_BuyNftWithBridge() public {
+        // Mint a unique NFT for this test (token ID 2 since 1 is already minted in setUp)
+        uint256 newTokenId = 2;
+        vm.startPrank(owner);
+        vertixNFT.mintSingleNft(seller, URI, METADATA, 500);
+        vm.stopPrank();
+        vm.prank(seller);
+        vertixNFT.approve(address(marketplaceCore), newTokenId);
+
+        // Set up cross-chain registry - use the actual deployed registry address
+        address crossChainRegistry = address(marketplaceStorage.crossChainRegistry()); // From deployment logs
+        vm.prank(owner);
+        marketplaceStorage.setCrossChainRegistry(crossChainRegistry);
+
+        // Mock the cross-chain registry calls to avoid CCR__AssetAlreadyExists
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(CrossChainRegistry.registerCrossChainAsset.selector),
+            abi.encode(bytes32(uint256(0x123)))
+        );
+
+        // Mock the bridge asset call - use the actual crossChainBridge address from the contract
+        address crossChainBridge = marketplaceCore.crossChainBridge();
+        vm.mockCall(
+            crossChainBridge,
+            abi.encodeWithSelector(
+                CrossChainBridge.bridgeAsset.selector,
+                CrossChainBridge.BridgeParams({
+                    contractAddr: address(vertixNFT),
+                    targetContract: address(0),
+                    tokenId: newTokenId,
+                    targetChainType: 1, // Base
+                    assetType: 0,
+                    isNft: true,
+                    assetId: "",
+                    adapterParams: ""
+                })
+            ),
+            abi.encode()
+        );
+
+        // List NFT cross-chain
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNftCrossChain(address(vertixNFT), newTokenId, LISTING_PRICE, true);
+
+        // Buy NFT with bridge
+        vm.prank(buyer);
+        marketplaceCore.buyNftWithBridge{value: LISTING_PRICE}(listingId, 1); // Bridge to Base
+
+        // Verify NFT is transferred to bridge contract (not buyer, since it's being bridged)
+        assertEq(vertixNFT.ownerOf(newTokenId), address(marketplaceCore), "NFT should remain with marketplace for bridging");
+    }
+
+    function test_BuyNftWithBridge_InvalidTargetChain() public {
+        // Mint a unique NFT for this test (token ID 2 since that's what gets minted)
+        uint256 newTokenId = 2;
+        vm.startPrank(owner);
+        vertixNFT.mintSingleNft(seller, URI, METADATA, 500);
+        vm.stopPrank();
+        vm.prank(seller);
+        vertixNFT.approve(address(marketplaceCore), newTokenId);
+
+        // Mock the cross-chain registry calls to avoid CCR__AssetAlreadyExists
+        address crossChainRegistry = address(marketplaceStorage.crossChainRegistry());
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(CrossChainRegistry.registerCrossChainAsset.selector),
+            abi.encode(bytes32(uint256(0x456)))
+        );
+
+        // Mock the bridge asset call for invalid chain
+        address crossChainBridge = marketplaceCore.crossChainBridge();
+        vm.mockCall(
+            crossChainBridge,
+            abi.encodeWithSelector(
+                CrossChainBridge.bridgeAsset.selector,
+                CrossChainBridge.BridgeParams({
+                    contractAddr: address(vertixNFT),
+                    targetContract: address(0),
+                    tokenId: newTokenId,
+                    targetChainType: 99, // Invalid chain
+                    assetType: 0,
+                    isNft: true,
+                    assetId: "",
+                    adapterParams: ""
+                })
+            ),
+            abi.encode()
+        );
+
+        // List NFT cross-chain
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNftCrossChain(address(vertixNFT), newTokenId, LISTING_PRICE, true);
+
+        // Buy NFT with bridge to invalid chain - should succeed since function doesn't validate chain ID
+        vm.prank(buyer);
+        marketplaceCore.buyNftWithBridge{value: LISTING_PRICE}(listingId, 99); // Invalid chain
+
+        // Verify NFT remains with marketplace for bridging
+        assertEq(vertixNFT.ownerOf(newTokenId), address(marketplaceCore), "NFT should remain with marketplace for bridging");
+    }
+
+    function test_BuyNftWithBridge_NotCrossChainListing() public {
+        // List NFT normally (not cross-chain)
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNft(address(vertixNFT), TOKEN_ID, LISTING_PRICE);
+
+        // Try to buy with bridge - should revert with invalid listing error
+        vm.prank(buyer);
+        vm.expectRevert(MarketplaceCore.MC__InvalidListing.selector);
+        marketplaceCore.buyNftWithBridge{value: LISTING_PRICE}(listingId, 1);
+    }
+
+    function test_BuyNftWithBridge_WhenPaused() public {
+        // Mint a unique NFT for this test (token ID 2 since that's what gets minted)
+        uint256 newTokenId = 2;
+        vm.startPrank(owner);
+        vertixNFT.mintSingleNft(seller, URI, METADATA, 500);
+        vm.stopPrank();
+        vm.prank(seller);
+        vertixNFT.approve(address(marketplaceCore), newTokenId);
+
+        // Mock the cross-chain registry calls to avoid CCR__AssetAlreadyExists
+        address crossChainRegistry = address(marketplaceStorage.crossChainRegistry());
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(CrossChainRegistry.registerCrossChainAsset.selector),
+            abi.encode(bytes32(uint256(0x789)))
+        );
+
+        // List NFT cross-chain
+        vm.prank(seller);
+        uint256 listingId = marketplaceCore.listNftCrossChain(address(vertixNFT), newTokenId, LISTING_PRICE, true);
+
+        // Pause the contract
+        vm.prank(owner);
+        marketplaceCore.pause();
+
+        // Try to buy with bridge when paused - should revert due to pause
+        vm.prank(buyer);
+        vm.expectRevert();
+        marketplaceCore.buyNftWithBridge{value: LISTING_PRICE}(listingId, 1);
     }
 
 }

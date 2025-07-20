@@ -11,10 +11,7 @@ import {MarketplaceStorage} from "../../src/MarketplaceStorage.sol";
 import {MarketplaceFees} from "../../src/MarketplaceFees.sol";
 import {VertixGovernance} from "../../src/VertixGovernance.sol";
 import {VertixNFT} from "../../src/VertixNFT.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+
 import {VertixUtils} from "../../src/libraries/VertixUtils.sol";
 
 contract MarketplaceProxyTest is Test {
@@ -26,6 +23,7 @@ contract MarketplaceProxyTest is Test {
     MarketplaceFees public marketplaceFees;
     VertixGovernance public governance;
     VertixNFT public vertixNFT;
+    address public crossChainBridge;
 
     // Addresses
     address public owner;
@@ -89,6 +87,7 @@ contract MarketplaceProxyTest is Test {
         verificationServer = addresses.verificationServer;
         feeRecipient = addresses.feeRecipient;
         escrow = addresses.escrow;
+        crossChainBridge = addresses.crossChainBridge;
 
         // Get deployer key from HelperConfig
         HelperConfig helperConfig = new HelperConfig();
@@ -670,7 +669,8 @@ contract MarketplaceProxyTest is Test {
         MarketplaceCore newCore = new MarketplaceCore(
             address(marketplaceStorage),
             address(marketplaceFees),
-            address(governance)
+            address(governance),
+            address(crossChainBridge)
         );
 
         // Test updating core address through proxy

@@ -40,8 +40,8 @@ contract DeployVertix is Script {
 
         // Deploy contracts in stages to reduce stack depth
         vertixAddresses = _deployInitialContracts(deployerKey, verificationServer, feeRecipient);
-        _deployMarketplaceComponents(vertixAddresses);
         _deployCrossChainComponents(vertixAddresses, layerZeroEndpoint, chainType);
+        _deployMarketplaceComponents(vertixAddresses);
         _setupContracts(vertixAddresses, chainType);
 
         vm.stopBroadcast();
@@ -103,17 +103,16 @@ contract DeployVertix is Script {
     function _deployMarketplaceComponents(VertixAddresses memory addresses) internal {
         // Deploy MarketplaceFees
         addresses.marketplaceFees = address(new MarketplaceFees(addresses.governance, addresses.escrow));
-        console.log("MarketplaceFees deployed at:", addresses.marketplaceFees);
 
         // Deploy MarketplaceCore Implementation
         addresses.marketplaceCoreImpl = address(
             new MarketplaceCore(
                 addresses.marketplaceStorage,
                 addresses.marketplaceFees,
-                addresses.governance
+                addresses.governance,
+                addresses.crossChainBridge
             )
         );
-        console.log("MarketplaceCore implementation deployed at:", addresses.marketplaceCoreImpl);
 
         // Deploy MarketplaceAuctions Implementation
         addresses.marketplaceAuctionsImpl = address(
@@ -124,14 +123,12 @@ contract DeployVertix is Script {
                 addresses.marketplaceFees
             )
         );
-        console.log("MarketplaceAuctions implementation deployed at:", addresses.marketplaceAuctionsImpl);
 
         // Deploy MarketplaceProxy
         addresses.marketplaceProxy = address(new MarketplaceProxy(
             addresses.marketplaceCoreImpl,
             addresses.marketplaceAuctionsImpl
         ));
-        console.log("Main MarketplaceProxy deployed at:", addresses.marketplaceProxy);
     }
 
     function _deployCrossChainComponents(
@@ -159,7 +156,6 @@ contract DeployVertix is Script {
     function _setupContracts(VertixAddresses memory addresses, uint8 chainType) internal {
         // Initialize MarketplaceCore via proxy
         MarketplaceCore(payable(addresses.marketplaceProxy)).initialize();
-        console.log("MarketplaceCore initialized via proxy.");
 
         // Setup MarketplaceStorage
         MarketplaceStorage(addresses.marketplaceStorage).setContracts(
@@ -167,13 +163,15 @@ contract DeployVertix is Script {
             addresses.governance,
             addresses.escrow
         );
+        MarketplaceStorage(addresses.marketplaceStorage).setCrossChainRegistry(addresses.crossChainRegistry);
         MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceProxy, true);
         MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceCoreImpl, true);
         MarketplaceStorage(addresses.marketplaceStorage).authorizeContract(addresses.marketplaceAuctionsImpl, true);
-        console.log("MarketplaceStorage setup complete.");
 
         // Setup CrossChainRegistry
         CrossChainRegistry(addresses.crossChainRegistry).authorizeContract(addresses.crossChainBridge, true);
+        CrossChainRegistry(addresses.crossChainRegistry).authorizeContract(addresses.marketplaceProxy, true);
+        CrossChainRegistry(addresses.crossChainRegistry).authorizeContract(addresses.marketplaceCoreImpl, true);
         CrossChainRegistry(addresses.crossChainRegistry).setChainConfig(
             chainType,
             addresses.crossChainBridge,
@@ -182,13 +180,22 @@ contract DeployVertix is Script {
             50, // feeBps (0.5%)
             true // isActive
         );
-        console.log("CrossChainRegistry setup complete.");
+
+        // Setup CrossChainBridge trusted remotes for cross-chain communication
+        // Note: These need to be set after deployment on both chains
+        // For Polygon (chainType 1) -> Base (chainType 2)
+        if (chainType == 1) {
+            // Set trusted remote for Base chain (LayerZero ID 184)
+            CrossChainBridge(addresses.crossChainBridge).setTrustedRemote(184, abi.encodePacked(addresses.crossChainBridge));
+        } else if (chainType == 2) {
+            // Set trusted remote for Polygon chain (LayerZero ID 109)
+            CrossChainBridge(addresses.crossChainBridge).setTrustedRemote(109, abi.encodePacked(addresses.crossChainBridge));
+        }
 
         // Final Governance setup
         VertixGovernance(addresses.governance).setMarketplace(addresses.marketplaceProxy);
         VertixGovernance(addresses.governance).addSupportedNftContract(addresses.nft);
         VertixEscrow(addresses.escrow).transferOwnership(addresses.governance);
-        console.log("Governance setup complete.");
     }
 
     function deployProxy(address impl, bytes memory initData, string memory name) internal returns (address proxy) {
@@ -198,7 +205,73 @@ contract DeployVertix is Script {
         return proxy;
     }
 
+    /**
+     * @dev Get the current chain name for logging
+     */
+    function _getChainName() internal view returns (string memory) {
+        if (block.chainid == 137) return "Polygon Mainnet";
+        if (block.chainid == 80001) return "Polygon Mumbai";
+        if (block.chainid == 8453) return "Base Mainnet";
+        if (block.chainid == 84532) return "Base Sepolia";
+        if (block.chainid == 1) return "Ethereum Mainnet";
+        if (block.chainid == 11155111) return "Sepolia";
+        return "Local Network";
+    }
+
+    /**
+     * @dev Deploy and setup contracts for a specific chain with detailed logging
+     * @param chainName Name of the chain for logging
+     */
+    function deployForChain(string memory chainName) internal returns (VertixAddresses memory) {
+        console.log("Deploying Vertix contracts for:", chainName);
+        VertixAddresses memory addresses = deployVertix();
+
+        console.log("=== Deployment Summary for", chainName, "===");
+        console.log("NFT Contract:", addresses.nft);
+        console.log("Governance:", addresses.governance);
+        console.log("Escrow:", addresses.escrow);
+        console.log("Marketplace Proxy:", addresses.marketplaceProxy);
+        console.log("Marketplace Core:", addresses.marketplaceCoreImpl);
+        console.log("Marketplace Auctions:", addresses.marketplaceAuctionsImpl);
+        console.log("Marketplace Fees:", addresses.marketplaceFees);
+        console.log("Marketplace Storage:", addresses.marketplaceStorage);
+        console.log("CrossChain Registry:", addresses.crossChainRegistry);
+        console.log("CrossChain Bridge:", addresses.crossChainBridge);
+        console.log("Verification Server:", addresses.verificationServer);
+        console.log("Fee Recipient:", addresses.feeRecipient);
+        console.log("==========================================");
+
+        return addresses;
+    }
+
+    /**
+     * @dev Set up cross-chain trusted remotes after both chains are deployed
+     * @param polygonBridgeAddress Bridge contract address on Polygon
+     * @param baseBridgeAddress Bridge contract address on Base
+     * @param deployerKey Private key for deployment
+     */
+    function setupCrossChainTrustedRemotes(
+        address polygonBridgeAddress,
+        address baseBridgeAddress,
+        uint256 deployerKey
+    ) external {
+        vm.startBroadcast(deployerKey);
+
+        // Set trusted remote on Polygon bridge for Base
+        CrossChainBridge(polygonBridgeAddress).setTrustedRemote(184, abi.encodePacked(baseBridgeAddress));
+        console.log("Polygon bridge: Set trusted remote for Base chain");
+
+        // Set trusted remote on Base bridge for Polygon
+        CrossChainBridge(baseBridgeAddress).setTrustedRemote(109, abi.encodePacked(polygonBridgeAddress));
+        console.log("Base bridge: Set trusted remote for Polygon chain");
+
+        vm.stopBroadcast();
+        console.log("Cross-chain trusted remotes setup complete!");
+    }
+
     function run() external returns (VertixAddresses memory) {
-        return deployVertix();
+        // Get chain name based on current network
+        string memory chainName = _getChainName();
+        return deployForChain(chainName);
     }
 }

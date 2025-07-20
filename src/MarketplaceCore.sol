@@ -11,6 +11,7 @@ import {MarketplaceStorage} from "./MarketplaceStorage.sol";
 import {MarketplaceFees} from "./MarketplaceFees.sol";
 import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 import {VertixUtils} from "./libraries/VertixUtils.sol";
+import {CrossChainBridge} from "./CrossChainBridge.sol";
 
 /**
  * @title MarketplaceCore
@@ -39,6 +40,7 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
     MarketplaceStorage public immutable STORAGE_CONTRACT;
     MarketplaceFees public immutable FEES_CONTRACT;
     IVertixGovernance public immutable GOVERNANCE_CONTRACT;
+    address public crossChainBridge; // Add bridge contract reference
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -85,11 +87,13 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
     constructor(
         address _storageContract,
         address _feesContract,
-        address _governanceContract
+        address _governanceContract,
+        address _crossChainBridge
     ) {
         STORAGE_CONTRACT = MarketplaceStorage(_storageContract);
         FEES_CONTRACT = MarketplaceFees(_feesContract);
         GOVERNANCE_CONTRACT = IVertixGovernance(_governanceContract);
+        crossChainBridge = _crossChainBridge;
         _disableInitializers();
     }
 
@@ -229,6 +233,34 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         }
     }
 
+    /**
+     * @dev List an NFT for cross-chain sale
+     * @param nftContractAddr Address of NFT contract
+     * @param tokenId ID of the NFT
+     * @param price Sale price in wei
+     * @param enableCrossChain Whether to enable cross-chain availability
+     */
+    function listNftCrossChain(
+        address nftContractAddr,
+        uint256 tokenId,
+        uint96 price,
+        bool enableCrossChain
+    ) external nonReentrant whenNotPaused returns (uint256) {
+        _validateListingRequirements(nftContractAddr, tokenId, price);
+        uint256 listingId = _createNftListing(nftContractAddr, tokenId, price);
+
+        if (enableCrossChain) {
+            // Register with CrossChainRegistry
+            STORAGE_CONTRACT.setCrossChainListing(listingId, true);
+
+            // Determine current chain type and register cross-chain asset
+            uint8 currentChainType = STORAGE_CONTRACT.getCurrentChainType();
+            STORAGE_CONTRACT.registerCrossChainAssetForAllChains(nftContractAddr, tokenId, price, currentChainType);
+        }
+
+        return listingId;
+    }
+
     /*//////////////////////////////////////////////////////////////
                           BUYING FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -279,6 +311,111 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
             fees.royaltyRecipient,
             fees.platformFee,
             fees.platformRecipient
+        );
+    }
+
+    /**
+     * @dev Buy NFT with optional bridging to target chain
+     * @param listingId ID of the listing
+     * @param targetChain Target chain to bridge to (0 for same chain)
+     */
+    function buyNftWithBridge(uint256 listingId, uint8 targetChain) external payable nonReentrant whenNotPaused {
+        (
+            address seller,
+            address nftContractAddr,
+            uint256 tokenId,
+            uint96 price,
+            uint8 flags,
+            uint8 originChain,
+            bool isCrossChainListed
+        ) = STORAGE_CONTRACT.getNftListingWithChain(listingId);
+
+        if ((flags & 1) == 0) revert MC__InvalidListing();
+        if (msg.value < price) revert MC__InsufficientPayment();
+
+        // If same chain, do normal purchase
+        if (targetChain == 0 || targetChain == originChain) {
+            // Mark inactive before transfers (CEI pattern)
+            STORAGE_CONTRACT.updateNftListingFlags(listingId, 0);
+            STORAGE_CONTRACT.removeNftListingHash(nftContractAddr, tokenId);
+
+            _safeTransferNft(nftContractAddr, address(this), msg.sender, tokenId);
+
+            MarketplaceFees.PaymentConfig memory config = MarketplaceFees.PaymentConfig({
+                totalPayment: msg.value,
+                salePrice: price,
+                nftContract: nftContractAddr,
+                tokenId: tokenId,
+                seller: seller,
+                hasRoyalties: true
+            });
+
+            uint256 refundAmount = FEES_CONTRACT.processNftSalePayment{value: msg.value}(config);
+            if (refundAmount > 0) {
+                FEES_CONTRACT.refundExcessPayment(msg.sender, refundAmount);
+            }
+            MarketplaceFees.FeeDistribution memory fees = FEES_CONTRACT.calculateNftFees(price, nftContractAddr, tokenId);
+
+            emit NFTBought(
+                listingId,
+                msg.sender,
+                price,
+                fees.royaltyAmount,
+                fees.royaltyRecipient,
+                fees.platformFee,
+                fees.platformRecipient
+            );
+            return;
+        }
+
+        // Cross-chain purchase with bridging
+        if (!isCrossChainListed) revert MC__InvalidListing();
+        
+        // Lock the asset and initiate bridge
+        _initiateCrossChainPurchase(listingId, seller, nftContractAddr, tokenId, price, targetChain);
+    }
+
+    /**
+     * @dev Internal function to initiate cross-chain purchase
+     */
+    function _initiateCrossChainPurchase(
+        uint256 listingId,
+        address seller,
+        address nftContractAddr,
+        uint256 tokenId,
+        uint96 price,
+        uint8 targetChain
+    ) internal {
+        // Mark listing as inactive during bridge
+        STORAGE_CONTRACT.updateNftListingFlags(listingId, 0);
+        
+        // Process payment to seller
+        MarketplaceFees.PaymentConfig memory config = MarketplaceFees.PaymentConfig({
+            totalPayment: msg.value,
+            salePrice: price,
+            nftContract: nftContractAddr,
+            tokenId: tokenId,
+            seller: seller,
+            hasRoyalties: true
+        });
+        uint256 refundAmount = FEES_CONTRACT.processNftSalePayment{value: msg.value}(config);
+        
+        if (refundAmount > 0) {
+            FEES_CONTRACT.refundExcessPayment(msg.sender, refundAmount);
+        }
+
+        // Initiate bridge request
+        // This would integrate with your CrossChainBridge contract
+        _bridgeAsset(msg.sender, nftContractAddr, tokenId, targetChain);
+        
+        emit NFTBought(
+            listingId,
+            msg.sender,
+            price,
+            0, // royaltyAmount
+            address(0), // royaltyRecipient
+            0, // platformFee
+            address(0) // feeRecipient
         );
     }
 
@@ -472,6 +609,36 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
         if (!active) revert MC__InvalidListing();
         if (msg.sender != seller) revert MC__NotSeller();
     }
+
+    /**
+     * @dev Bridge asset to target chain using CrossChainBridge
+     * @param nftContract Address of the NFT contract
+     * @param tokenId ID of the NFT
+     * @param targetChain Target chain to bridge to
+     */
+    function _bridgeAsset(
+        address /* buyer */,
+        address nftContract,
+        uint256 tokenId,
+        uint8 targetChain
+    ) internal {
+        // Create bridge parameters using the struct from CrossChainBridge
+        CrossChainBridge.BridgeParams memory params = CrossChainBridge.BridgeParams({
+            contractAddr: nftContract,
+            targetContract: address(0), // Will be set on target chain
+            tokenId: tokenId,
+            targetChainType: targetChain,
+            assetType: 0, // Not used for NFTs
+            isNft: true,
+            assetId: "",
+            adapterParams: ""
+        });
+
+        // Call bridge contract
+        CrossChainBridge(crossChainBridge).bridgeAsset{value: 0}(params);
+    }
+
+
 
     fallback() payable external{}
     receive() payable external{}

@@ -3,8 +3,9 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {MarketplaceStorage} from "../../src/MarketplaceStorage.sol";
+import {CrossChainRegistry} from "../../src/CrossChainRegistry.sol";
 import {DeployVertix} from "../../script/DeployVertix.s.sol";
-import {VertixUtils} from "../../src/libraries/VertixUtils.sol";
+
 
 contract MarketplaceStorageTest is Test {
     // DeployVertix script instance
@@ -175,7 +176,7 @@ contract MarketplaceStorageTest is Test {
     function test_RemoveNftListingHash() public {
         // Create listing first
         vm.prank(authorizedContract);
-        uint256 listingId = storageContract.createNftListing(seller, nftContract, TOKEN_ID, LISTING_PRICE);
+        storageContract.createNftListing(seller, nftContract, TOKEN_ID, LISTING_PRICE);
 
         // Remove listing hash
         vm.prank(authorizedContract);
@@ -256,7 +257,7 @@ contract MarketplaceStorageTest is Test {
     function test_RemoveNonNftListingHash() public {
         // Create listing first
         vm.prank(authorizedContract);
-        uint256 listingId = storageContract.createNonNftListing(
+        storageContract.createNonNftListing(
             seller, ASSET_TYPE, ASSET_ID, LISTING_PRICE, METADATA, VERIFICATION_HASH
         );
 
@@ -541,5 +542,184 @@ contract MarketplaceStorageTest is Test {
     function test_Constants() public view {
         assertEq(storageContract.MIN_AUCTION_DURATION(), 1 hours, "Minimum auction duration should be 1 hour");
         assertEq(storageContract.MAX_AUCTION_DURATION(), 7 days, "Maximum auction duration should be 7 days");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        CROSS-CHAIN FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetCrossChainRegistry() public {
+        address newCrossChainRegistry = makeAddr("newCrossChainRegistry");
+
+        vm.prank(owner);
+        storageContract.setCrossChainRegistry(newCrossChainRegistry);
+
+        assertEq(storageContract.crossChainRegistry(), newCrossChainRegistry, "Cross-chain registry should be updated");
+    }
+
+    function test_RevertIf_NonOwnerSetsCrossChainRegistry() public {
+        address newCrossChainRegistry = makeAddr("newCrossChainRegistry");
+
+        vm.prank(seller);
+        vm.expectRevert("MStorage: Not owner");
+        storageContract.setCrossChainRegistry(newCrossChainRegistry);
+    }
+
+    function test_GetCurrentChainType() public {
+        // Test for different chain IDs
+        // Note: In test environment, block.chainid is typically 31337 (Anvil)
+        uint8 chainType = storageContract.getCurrentChainType();
+
+        // For Anvil (31337), it should default to Polygon (0)
+        assertEq(chainType, 0, "Should default to Polygon for local testing");
+    }
+
+    function test_GetSupportedChains() public {
+        uint8[] memory supportedChains = storageContract.getSupportedChains();
+        
+        assertEq(supportedChains.length, 3, "Should have 3 supported chains");
+        assertEq(supportedChains[0], 0, "First chain should be Polygon");
+        assertEq(supportedChains[1], 1, "Second chain should be Base");
+        assertEq(supportedChains[2], 2, "Third chain should be Ethereum");
+    }
+
+    function test_RegisterCrossChainAssetForAllChains() public {
+        // Set up cross-chain registry first
+        address crossChainRegistry = makeAddr("crossChainRegistry");
+        vm.prank(owner);
+        storageContract.setCrossChainRegistry(crossChainRegistry);
+
+        // Mock the CrossChainRegistry to avoid actual calls
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                nftContract,
+                TOKEN_ID,
+                0, // originChainType (Polygon)
+                1, // targetChainType (Base)
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                nftContract,
+                TOKEN_ID,
+                0, // originChainType (Polygon)
+                2, // targetChainType (Ethereum)
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.prank(authorizedContract);
+        storageContract.registerCrossChainAssetForAllChains(
+            nftContract,
+            TOKEN_ID,
+            LISTING_PRICE,
+            0 // originChainType (Polygon)
+        );
+
+        // Verify that the registry was called for each supported chain (except origin)
+        // This test verifies the function executes without reverting
+        // In a real scenario, you'd verify the actual CrossChainRegistry calls
+    }
+
+    function test_RevertIf_UnauthorizedRegisterCrossChainAsset() public {
+        vm.prank(unauthorizedContract);
+        vm.expectRevert("MStorage: Not authorized");
+        storageContract.registerCrossChainAssetForAllChains(
+            nftContract,
+            TOKEN_ID,
+            LISTING_PRICE,
+            0
+        );
+    }
+
+    function test_RegisterCrossChainAssetForAllChains_SkipsOriginChain() public {
+        // Set up cross-chain registry
+        address crossChainRegistry = makeAddr("crossChainRegistry");
+        vm.prank(owner);
+        storageContract.setCrossChainRegistry(crossChainRegistry);
+
+        // Mock calls for Base and Ethereum (should be called)
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                nftContract,
+                TOKEN_ID,
+                1, // originChainType (Base)
+                0, // targetChainType (Polygon)
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        vm.mockCall(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                nftContract,
+                TOKEN_ID,
+                1, // originChainType (Base)
+                2, // targetChainType (Ethereum)
+                address(0),
+                LISTING_PRICE
+            ),
+            abi.encode(bytes32(0))
+        );
+
+        // Should NOT call for origin chain (Base = 1)
+        vm.mockCallRevert(
+            crossChainRegistry,
+            abi.encodeWithSelector(
+                CrossChainRegistry.registerCrossChainAsset.selector,
+                nftContract,
+                TOKEN_ID,
+                1, // originChainType (Base)
+                1, // targetChainType (Base) - same as origin
+                address(0),
+                LISTING_PRICE
+            ),
+            "Should not call for same chain"
+        );
+
+        vm.prank(authorizedContract);
+        storageContract.registerCrossChainAssetForAllChains(
+            nftContract,
+            TOKEN_ID,
+            LISTING_PRICE,
+            1 // originChainType (Base)
+        );
+
+        // Test passes if no revert occurs (origin chain was skipped)
+    }
+
+    function test_SetCrossChainListing() public {
+        // Create listing first
+        vm.prank(authorizedContract);
+        uint256 listingId = storageContract.createNftListing(seller, nftContract, TOKEN_ID, LISTING_PRICE);
+
+        // Set as cross-chain listing
+        vm.prank(authorizedContract);
+        storageContract.setCrossChainListing(listingId, true);
+
+        // Verify cross-chain listing status
+        (,,,,,, bool isCrossChainListed) = storageContract.getNftListingWithChain(listingId);
+        assertTrue(isCrossChainListed, "Listing should be cross-chain listed");
+    }
+
+    function test_RevertIf_UnauthorizedSetCrossChainListing() public {
+        vm.prank(unauthorizedContract);
+        vm.expectRevert("MStorage: Not authorized");
+        storageContract.setCrossChainListing(LISTING_ID, true);
     }
 } 
