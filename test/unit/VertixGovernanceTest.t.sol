@@ -127,32 +127,32 @@ contract VertixGovernanceTest is Test {
         vm.startPrank(owner);
 
         // Test with zero escrow - create new governance contract for testing
-        VertixGovernance newImplementation = new VertixGovernance();
+        VertixGovernance newImplementation = new VertixGovernance{salt: bytes32(uint256(1))}();
         vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
-        ERC1967Proxy proxy = new ERC1967Proxy(
+        ERC1967Proxy proxy = new ERC1967Proxy{salt: bytes32(uint256(2))}(
             address(newImplementation),
             abi.encodeWithSelector(VertixGovernance.initialize.selector, vertixAddresses.marketplaceProxy, address(0), feeRecipient, verificationServer)
         );
 
         // Test with zero verification server
-        newImplementation = new VertixGovernance();
+        newImplementation = new VertixGovernance{salt: bytes32(uint256(3))}();
         vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
-        proxy = new ERC1967Proxy(
+        proxy = new ERC1967Proxy{salt: bytes32(uint256(4))}(
             address(newImplementation),
             abi.encodeWithSelector(VertixGovernance.initialize.selector, vertixAddresses.marketplaceProxy, vertixAddresses.escrow, feeRecipient, address(0))
         );
 
         // Test with zero fee recipient
-        newImplementation = new VertixGovernance();
+        newImplementation = new VertixGovernance{salt: bytes32(uint256(5))}();
         vm.expectRevert(VertixGovernance.VertixGovernance__ZeroAddress.selector);
-        proxy = new ERC1967Proxy(
+        proxy = new ERC1967Proxy{salt: bytes32(uint256(6))}(
             address(newImplementation),
             abi.encodeWithSelector(VertixGovernance.initialize.selector, vertixAddresses.marketplaceProxy, vertixAddresses.escrow, address(0), verificationServer)
         );
 
         // Marketplace can be zero initially
-        newImplementation = new VertixGovernance();
-        proxy = new ERC1967Proxy(
+        newImplementation = new VertixGovernance{salt: bytes32(uint256(7))}();
+        proxy = new ERC1967Proxy{salt: bytes32(uint256(8))}(
             address(newImplementation),
             abi.encodeWithSelector(VertixGovernance.initialize.selector, address(0), vertixAddresses.escrow, feeRecipient, verificationServer)
         );
@@ -361,7 +361,7 @@ contract VertixGovernanceTest is Test {
 
     function test_Upgrade() public {
         vm.startPrank(owner);
-        VertixGovernanceV2Mock newImplementation = new VertixGovernanceV2Mock();
+        VertixGovernanceV2Mock newImplementation = new VertixGovernanceV2Mock{salt: bytes32(uint256(9))}();
 
         // Get current fee config for comparison after upgrade
         (uint16 oldFeeBps, address oldFeeRecipient) = governance.getFeeConfig();

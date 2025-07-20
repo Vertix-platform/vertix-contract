@@ -421,7 +421,8 @@ contract VertixNFTTest is Test {
 
         // Deploy mock upgraded implementation
         vm.startPrank(owner);
-        VertixNFTV2Mock newImplementation = new VertixNFTV2Mock();
+        // Use a more robust deployment strategy with explicit address calculation
+        VertixNFTV2Mock newImplementation = new VertixNFTV2Mock{salt: bytes32(uint256(1))}();
 
         // Upgrade the proxy
         nft.upgradeToAndCall(address(newImplementation), "");
