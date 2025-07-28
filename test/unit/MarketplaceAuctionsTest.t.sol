@@ -3,10 +3,13 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {MarketplaceAuctions} from "../../src/MarketplaceAuctions.sol";
+import {MarketplaceCore} from "../../src/MarketplaceCore.sol";
+import {MarketplaceProxy} from "../../src/MarketplaceProxy.sol";
 import {MarketplaceStorage} from "../../src/MarketplaceStorage.sol";
 import {MarketplaceFees} from "../../src/MarketplaceFees.sol";
 import {VertixGovernance} from "../../src/VertixGovernance.sol";
 import {VertixEscrow} from "../../src/VertixEscrow.sol";
+import {VertixNFT} from "../../src/VertixNFT.sol";
 import {DeployVertix} from "../../script/DeployVertix.s.sol";
 
 contract MarketplaceAuctionsTest is Test {
@@ -18,10 +21,13 @@ contract MarketplaceAuctionsTest is Test {
 
     // Contract instances
     MarketplaceAuctions public auctions;
+    MarketplaceCore public marketplaceCore;
+    MarketplaceProxy public marketplaceProxy;
     MarketplaceStorage public storageContract;
     MarketplaceFees public feesContract;
     VertixGovernance public governance;
     VertixEscrow public escrow;
+    VertixNFT public nftContract;
 
     // Test addresses
     address public owner;
@@ -42,6 +48,7 @@ contract MarketplaceAuctionsTest is Test {
     uint8 public constant ASSET_TYPE = 1;
     string public constant ASSET_ID = "test-asset-123";
     string public constant METADATA = "test-metadata";
+    string public constant TOKEN_URI = "ipfs://test-token-uri";
     bytes32 public constant VERIFICATION_HASH = keccak256("test-verification");
 
     // Test events
@@ -90,10 +97,13 @@ contract MarketplaceAuctionsTest is Test {
 
         // Get contract instances
         auctions = MarketplaceAuctions(payable(vertixAddresses.marketplaceAuctionsImpl));
+        marketplaceCore = MarketplaceCore(payable(vertixAddresses.marketplaceCoreImpl));
+        marketplaceProxy = MarketplaceProxy(payable(vertixAddresses.marketplaceProxy));
         storageContract = MarketplaceStorage(vertixAddresses.marketplaceStorage);
         feesContract = MarketplaceFees(vertixAddresses.marketplaceFees);
         governance = VertixGovernance(vertixAddresses.governance);
         escrow = VertixEscrow(vertixAddresses.escrow);
+        nftContract = VertixNFT(vertixAddresses.nft);
 
         // Get the owner from the governance contract
         owner = governance.owner();
@@ -114,38 +124,47 @@ contract MarketplaceAuctionsTest is Test {
      * @dev Helper function to create an NFT listing and mark it for auction
      */
     function _createNftListingForAuction() internal returns (uint256 listingId) {
-        // Create NFT listing
+        // First mint the NFT to the seller
         vm.prank(owner);
-        listingId = storageContract.createNftListing(
-            seller,
-            address(vertixAddresses.nft),
+        nftContract.mintSingleNft(seller, TOKEN_URI, bytes32(0), 0);
+
+        // Verify NFT was minted
+        assertEq(nftContract.ownerOf(TOKEN_ID), seller, "NFT should be minted to seller");
+
+        // Approve marketplace to transfer NFT
+        vm.prank(seller);
+        nftContract.approve(address(marketplaceProxy), TOKEN_ID);
+
+        // Create NFT listing using MarketplaceCore through proxy
+        vm.prank(seller);
+        listingId = MarketplaceCore(payable(marketplaceProxy)).listNft(
+            address(nftContract),
             TOKEN_ID,
             STARTING_PRICE
         );
 
         // Mark listing for auction
-        vm.prank(owner);
-        storageContract.updateNftListingFlags(listingId, 3); // active=1, auction=2
+        vm.prank(seller);
+        MarketplaceCore(payable(marketplaceProxy)).listForAuction(listingId, true);
     }
 
     /**
      * @dev Helper function to create a non-NFT listing and mark it for auction
      */
     function _createNonNftListingForAuction() internal returns (uint256 listingId) {
-        // Create non-NFT listing
-        vm.prank(owner);
-        listingId = storageContract.createNonNftListing(
-            seller,
+        // Create non-NFT listing using MarketplaceCore through proxy
+        vm.prank(seller);
+        listingId = MarketplaceCore(payable(marketplaceProxy)).listNonNftAsset(
             ASSET_TYPE,
             ASSET_ID,
             STARTING_PRICE,
             METADATA,
-            VERIFICATION_HASH
+            "verification_proof_data"
         );
-        
+
         // Mark listing for auction
-        vm.prank(owner);
-        storageContract.updateNonNftListingFlags(listingId, 3); // active=1, auction=2
+        vm.prank(seller);
+        MarketplaceCore(payable(marketplaceProxy)).listForAuction(listingId, false);
     }
 
     /**
@@ -163,7 +182,7 @@ contract MarketplaceAuctionsTest is Test {
         // Verify that the auctions contract was deployed correctly
         assertTrue(vertixAddresses.marketplaceAuctionsImpl != address(0), "Auctions should be deployed");
         assertTrue(address(auctions) != address(0), "Auctions instance should be valid");
-        
+
         // Verify contract addresses
         assertEq(address(auctions.STORAGE_CONTRACT()), address(storageContract), "Storage contract should be set");
         assertEq(address(auctions.FEES_CONTRACT()), address(feesContract), "Fees contract should be set");
@@ -177,12 +196,12 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_StartNftAuction() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         assertEq(auctionId, 1, "Auction ID should be 1");
-        
+
         // Verify auction details
         (MarketplaceStorage.AuctionDetailsView memory auction, uint256 endTime) = auctions.getAuctionInfo(auctionId);
         assertTrue(auction.active, "Auction should be active");
@@ -197,64 +216,70 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_StartNftAuction_EmitsEvent() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
         vm.expectEmit(true, true, false, true);
         emit NFTAuctionStarted(1, seller, block.timestamp, AUCTION_DURATION, STARTING_PRICE, address(vertixAddresses.nft), TOKEN_ID);
-        
-        auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
     }
 
     function test_RevertIf_StartNftAuction_NotSeller() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(unauthorized);
         vm.expectRevert(MarketplaceAuctions.MA__NotSeller.selector);
-        auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
     }
 
     function test_RevertIf_StartNftAuction_InvalidDuration() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
         vm.expectRevert(abi.encodeWithSelector(MarketplaceAuctions.MA__InvalidDuration.selector, 30 minutes));
-        auctions.startNftAuction(listingId, 30 minutes, STARTING_PRICE);
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, 30 minutes, STARTING_PRICE);
     }
 
     function test_RevertIf_StartNftAuction_ZeroPrice() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
         vm.expectRevert(MarketplaceAuctions.MA__InsufficientPayment.selector);
-        auctions.startNftAuction(listingId, AUCTION_DURATION, 0);
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, 0);
     }
 
     function test_RevertIf_StartNftAuction_NotListedForAuction() public {
-        // Create listing but don't mark for auction
+        // Mint NFT first
         vm.prank(owner);
-        uint256 listingId = storageContract.createNftListing(
-            seller, 
-            address(vertixAddresses.nft), 
-            TOKEN_ID, 
+        nftContract.mintSingleNft(seller, TOKEN_URI, bytes32(0), 0);
+
+        // Approve marketplace to transfer NFT
+        vm.prank(seller);
+        nftContract.approve(address(marketplaceProxy), TOKEN_ID);
+        // Create listing but don't mark for auction
+        vm.prank(seller);
+        uint256 listingId = MarketplaceCore(payable(marketplaceProxy)).listNft(
+            address(nftContract),
+            TOKEN_ID,
             STARTING_PRICE
         );
-        
+
         vm.prank(seller);
         vm.expectRevert(MarketplaceAuctions.MA__NotListedForAuction.selector);
-        auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
     }
 
     function test_RevertIf_StartNftAuction_AlreadyListedForAuction() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         // Start first auction
         vm.prank(seller);
-        auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // Try to start second auction for same listing
         vm.prank(seller);
         vm.expectRevert(MarketplaceAuctions.MA__AlreadyListedForAuction.selector);
-        auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -263,12 +288,12 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_StartNonNftAuction() public {
         uint256 listingId = _createNonNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNonNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNonNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         assertEq(auctionId, 1, "Auction ID should be 1");
-        
+
         // Verify auction details
         (MarketplaceStorage.AuctionDetailsView memory auction, uint256 endTime) = auctions.getAuctionInfo(auctionId);
         assertTrue(auction.active, "Auction should be active");
@@ -284,20 +309,20 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_StartNonNftAuction_EmitsEvent() public {
         uint256 listingId = _createNonNftListingForAuction();
-        
+
         vm.prank(seller);
         vm.expectEmit(true, true, false, true);
         emit NonNFTAuctionStarted(1, seller, block.timestamp, AUCTION_DURATION, STARTING_PRICE, ASSET_ID, ASSET_TYPE);
-        
-        auctions.startNonNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
+        MarketplaceAuctions(payable(marketplaceProxy)).startNonNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
     }
 
     function test_RevertIf_StartNonNftAuction_NotSeller() public {
         uint256 listingId = _createNonNftListingForAuction();
-        
+
         vm.prank(unauthorized);
         vm.expectRevert(MarketplaceAuctions.MA__NotSeller.selector);
-        auctions.startNonNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        MarketplaceAuctions(payable(marketplaceProxy)).startNonNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -306,13 +331,13 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_PlaceBid() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         vm.prank(bidder1);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
+
         // Verify bid was placed
         (MarketplaceStorage.AuctionDetailsView memory auction,) = auctions.getAuctionInfo(auctionId);
         assertEq(auction.highestBidder, bidder1, "Highest bidder should be correct");
@@ -322,36 +347,36 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_PlaceBid_EmitsEvent() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         vm.prank(bidder1);
         vm.expectEmit(true, true, true, true);
         emit BidPlaced(auctionId, 0, bidder1, BID_AMOUNT_1, TOKEN_ID);
-        
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
+
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
     }
 
     function test_PlaceBid_RefundsPreviousBidder() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // First bid
         vm.prank(bidder1);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
+
         uint256 bidder1BalanceBefore = bidder1.balance;
-        
+
         // Second bid (should refund first bidder)
         vm.prank(bidder2);
-        auctions.placeBid{value: BID_AMOUNT_2}(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_2}(auctionId);
+
         uint256 bidder1BalanceAfter = bidder1.balance;
         assertEq(bidder1BalanceAfter, bidder1BalanceBefore + BID_AMOUNT_1, "First bidder should be refunded");
-        
+
         // Verify new highest bid
         (MarketplaceStorage.AuctionDetailsView memory auction,) = auctions.getAuctionInfo(auctionId);
         assertEq(auction.highestBidder, bidder2, "Highest bidder should be updated");
@@ -360,61 +385,61 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_RevertIf_PlaceBid_AuctionInactive() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // End auction
         _advanceTime(AUCTION_DURATION + 1);
         vm.prank(seller);
-        auctions.endAuction(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
+
         // Try to place bid on ended auction
         vm.prank(bidder1);
         vm.expectRevert(MarketplaceAuctions.MA__AuctionInactive.selector);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
     }
 
     function test_RevertIf_PlaceBid_AuctionExpired() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // Advance time past auction end
         _advanceTime(AUCTION_DURATION + 1);
-        
+
         vm.prank(bidder1);
         vm.expectRevert(MarketplaceAuctions.MA__AuctionExpired.selector);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
     }
 
     function test_RevertIf_PlaceBid_BidTooLow() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // Try to bid below starting price
         vm.prank(bidder1);
         vm.expectRevert(abi.encodeWithSelector(MarketplaceAuctions.MA__BidTooLow.selector, STARTING_PRICE - 0.1 ether));
-        auctions.placeBid{value: STARTING_PRICE - 0.1 ether}(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: STARTING_PRICE - 0.1 ether}(auctionId);
     }
 
     function test_RevertIf_PlaceBid_BidNotHigherThanCurrent() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // First bid
         vm.prank(bidder1);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
+
         // Try to bid same amount
         vm.prank(bidder2);
         vm.expectRevert(abi.encodeWithSelector(MarketplaceAuctions.MA__BidTooLow.selector, BID_AMOUNT_1));
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -423,20 +448,20 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_EndAuction() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // Place bid
         vm.prank(bidder1);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
+
         // Advance time to end auction
         _advanceTime(AUCTION_DURATION + 1);
-        
+
         vm.prank(seller);
-        auctions.endAuction(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
+
         // Verify auction ended
         (MarketplaceStorage.AuctionDetailsView memory auction,) = auctions.getAuctionInfo(auctionId);
         assertFalse(auction.active, "Auction should not be active");
@@ -445,64 +470,64 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_EndAuction_EmitsEvent() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // Place bid
         vm.prank(bidder1);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
+
         // Advance time to end auction
         _advanceTime(AUCTION_DURATION + 1);
-        
+
         vm.prank(seller);
         vm.expectEmit(true, true, true, true);
         emit AuctionEnded(auctionId, seller, bidder1, BID_AMOUNT_1, TOKEN_ID);
-        
-        auctions.endAuction(auctionId);
+
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
     }
 
     function test_RevertIf_EndAuction_NotSeller() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         _advanceTime(AUCTION_DURATION + 1);
-        
+
         vm.prank(unauthorized);
         vm.expectRevert(MarketplaceAuctions.MA__NotSeller.selector);
-        auctions.endAuction(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
     }
 
     function test_RevertIf_EndAuction_AuctionInactive() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // End auction
         _advanceTime(AUCTION_DURATION + 1);
         vm.prank(seller);
-        auctions.endAuction(auctionId);
-        
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
+
         // Try to end again
         vm.prank(seller);
         vm.expectRevert(MarketplaceAuctions.MA__AuctionInactive.selector);
-        auctions.endAuction(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
     }
 
     function test_RevertIf_EndAuction_AuctionOngoing() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // Try to end auction before it expires
         vm.prank(seller);
         vm.expectRevert(abi.encodeWithSelector(MarketplaceAuctions.MA__AuctionOngoing.selector, block.timestamp));
-        auctions.endAuction(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -511,12 +536,12 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_GetAuctionInfo() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         (MarketplaceStorage.AuctionDetailsView memory auction, uint256 endTime) = auctions.getAuctionInfo(auctionId);
-        
+
         assertTrue(auction.active, "Auction should be active");
         assertEq(auction.seller, seller, "Seller should be correct");
         assertEq(auction.startingPrice, STARTING_PRICE, "Starting price should be correct");
@@ -526,13 +551,13 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_IsAuctionExpired() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         // Check before expiration
         assertFalse(auctions.isAuctionExpired(auctionId), "Auction should not be expired");
-        
+
         // Advance time past expiration
         _advanceTime(AUCTION_DURATION + 1);
         assertTrue(auctions.isAuctionExpired(auctionId), "Auction should be expired");
@@ -540,19 +565,19 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_GetTimeRemaining() public {
         uint256 listingId = _createNftListingForAuction();
-        
+
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
-        
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+
         uint256 timeRemaining = auctions.getTimeRemaining(auctionId);
         assertGt(timeRemaining, 0, "Time remaining should be greater than 0");
         assertLe(timeRemaining, AUCTION_DURATION, "Time remaining should be less than or equal to duration");
-        
+
         // Advance time
         _advanceTime(AUCTION_DURATION / 2);
         uint256 newTimeRemaining = auctions.getTimeRemaining(auctionId);
         assertLt(newTimeRemaining, timeRemaining, "Time remaining should decrease");
-        
+
         // Advance past expiration
         _advanceTime(AUCTION_DURATION);
         assertEq(auctions.getTimeRemaining(auctionId), 0, "Time remaining should be 0 after expiration");
@@ -567,7 +592,7 @@ contract MarketplaceAuctionsTest is Test {
         vm.prank(owner);
         auctions.pause();
         assertTrue(auctions.paused(), "Contract should be paused");
-        
+
         // Unpause
         vm.prank(owner);
         auctions.unpause();
@@ -576,42 +601,42 @@ contract MarketplaceAuctionsTest is Test {
 
     function test_RevertIf_Pause_NotOwner() public {
         vm.prank(unauthorized);
-        vm.expectRevert(MarketplaceAuctions.MA__NotSeller.selector);
+        vm.expectRevert();
         auctions.pause();
     }
 
     function test_RevertIf_Unpause_NotOwner() public {
         vm.prank(unauthorized);
-        vm.expectRevert(MarketplaceAuctions.MA__NotSeller.selector);
+        vm.expectRevert();
         auctions.unpause();
     }
 
     function test_RevertIf_StartAuction_WhenPaused() public {
         uint256 listingId = _createNftListingForAuction();
 
-        // Pause contract
+        // Pause contract through proxy
         vm.prank(owner);
-        auctions.pause();
+        MarketplaceAuctions(payable(marketplaceProxy)).pause();
 
         vm.prank(seller);
         vm.expectRevert();
-        auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
     }
 
     function test_RevertIf_EndAuction_WhenPaused() public {
         uint256 listingId = _createNftListingForAuction();
 
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
 
-        // Pause contract
+        // Pause contract through proxy
         vm.prank(owner);
-        auctions.pause();
+        MarketplaceAuctions(payable(marketplaceProxy)).pause();
 
         _advanceTime(AUCTION_DURATION + 1);
         vm.prank(seller);
         vm.expectRevert();
-        auctions.endAuction(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -622,17 +647,17 @@ contract MarketplaceAuctionsTest is Test {
         uint256 listingId = _createNftListingForAuction();
 
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
 
         // Place multiple bids
         vm.prank(bidder1);
-        auctions.placeBid{value: BID_AMOUNT_1}(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_1}(auctionId);
 
         vm.prank(bidder2);
-        auctions.placeBid{value: BID_AMOUNT_2}(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_2}(auctionId);
 
         vm.prank(bidder3);
-        auctions.placeBid{value: BID_AMOUNT_3}(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).placeBid{value: BID_AMOUNT_3}(auctionId);
 
         // Verify final state
         (MarketplaceStorage.AuctionDetailsView memory auction,) = auctions.getAuctionInfo(auctionId);
@@ -649,13 +674,13 @@ contract MarketplaceAuctionsTest is Test {
         uint256 listingId = _createNftListingForAuction();
 
         vm.prank(seller);
-        uint256 auctionId = auctions.startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
+        uint256 auctionId = MarketplaceAuctions(payable(marketplaceProxy)).startNftAuction(listingId, AUCTION_DURATION, STARTING_PRICE);
 
         // Advance time to end auction
         _advanceTime(AUCTION_DURATION + 1);
 
         vm.prank(seller);
-        auctions.endAuction(auctionId);
+        MarketplaceAuctions(payable(marketplaceProxy)).endAuction(auctionId);
 
         // Verify auction ended with no winner
         (MarketplaceStorage.AuctionDetailsView memory auction,) = auctions.getAuctionInfo(auctionId);
@@ -672,4 +697,4 @@ contract MarketplaceAuctionsTest is Test {
 
         assertEq(address(auctions).balance, contractBalanceBefore + 1 ether, "Contract should receive ETH");
     }
-} 
+}

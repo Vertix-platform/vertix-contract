@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console} from "forge-std/Test.sol";
 import {DeployVertix} from "../../script/DeployVertix.s.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {MarketplaceProxy} from "../../src/MarketplaceProxy.sol";
@@ -336,9 +336,10 @@ contract MarketplaceProxyTest is Test {
         // Test that operations are paused
         vm.prank(seller);
         vm.expectRevert();
-        address(marketplaceProxy).call(
+        (bool listingSuccess, ) = address(marketplaceProxy).call(
             abi.encodeWithSignature("listNft(address,uint256,uint96)", address(vertixNFT), TOKEN_ID, LISTING_PRICE)
         );
+        require(listingSuccess, "listNft call failed");
 
         // Test unpause through proxy
         vm.prank(owner);
@@ -675,10 +676,7 @@ contract MarketplaceProxyTest is Test {
 
         // Test updating core address through proxy
         vm.prank(owner);
-        (bool success, ) = address(marketplaceProxy).call(
-            abi.encodeWithSignature("updateMarketplaceCoreAddress(address)", address(newCore))
-        );
-        require(success, "updateMarketplaceCoreAddress call failed");
+        marketplaceProxy.updateMarketplaceCoreAddress(address(newCore));
 
         // Verify the address was updated
         assertEq(marketplaceProxy.marketplaceCoreAddress(), address(newCore), "Core address should be updated");
@@ -695,10 +693,7 @@ contract MarketplaceProxyTest is Test {
 
         // Test updating auctions address through proxy
         vm.prank(owner);
-        (bool success, ) = address(marketplaceProxy).call(
-            abi.encodeWithSignature("updateMarketplaceAuctionsAddress(address)", address(newAuctions))
-        );
-        require(success, "updateMarketplaceAuctionsAddress call failed");
+        marketplaceProxy.updateMarketplaceAuctionsAddress(address(newAuctions));
 
         // Verify the address was updated
         assertEq(marketplaceProxy.marketplaceAuctionsAddress(), address(newAuctions), "Auctions address should be updated");
@@ -708,18 +703,14 @@ contract MarketplaceProxyTest is Test {
         address newCore = makeAddr("newCore");
         vm.prank(buyer);
         vm.expectRevert();
-        address(marketplaceProxy).call(
-            abi.encodeWithSignature("updateMarketplaceCoreAddress(address)", newCore)
-        );
+        marketplaceProxy.updateMarketplaceCoreAddress(newCore);
     }
 
     function test_RevertIf_UpdateAuctionsAddressByNonOwner() public {
         address newAuctions = makeAddr("newAuctions");
         vm.prank(buyer);
         vm.expectRevert();
-        address(marketplaceProxy).call(
-            abi.encodeWithSignature("updateMarketplaceAuctionsAddress(address)", newAuctions)
-        );
+        marketplaceProxy.updateMarketplaceAuctionsAddress(newAuctions);
     }
 
     // /*//////////////////////////////////////////////////////////////
@@ -764,8 +755,11 @@ contract MarketplaceProxyTest is Test {
         }
 
         vm.expectRevert();
-        address(marketplaceProxy).call(largeData);
+        (bool success, bytes memory data) = address(marketplaceProxy).call(largeData);
+        console.logBytes(data);
+        console.log(success);
     }
+
 
     function test_FallbackWithEmptyData() public {
         // Test fallback with empty data

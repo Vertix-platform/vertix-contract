@@ -8,6 +8,7 @@ import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
 import {IVertixEscrow} from "./interfaces/IVertixEscrow.sol";
 import {MarketplaceStorage} from "./MarketplaceStorage.sol";
 import {MarketplaceFees} from "./MarketplaceFees.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /**
  * @title MarketplaceAuctions
@@ -27,6 +28,7 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
     error MA__AuctionOngoing(uint256 timestamp);
     error MA__TransferFailed();
     error MA__NotSeller();
+    error MA__NotOwner();
     error MA__NotListedForAuction();
     error MA__InvalidListing();
     error MA__InsufficientPayment();
@@ -325,6 +327,25 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
             );
         }
 
+        // Transfer asset to highest bidder or return to seller if no bids
+        if (auction.isNft) {
+            if (highestBidder != address(0)) {
+                // Transfer NFT to highest bidder from the marketplace proxy
+                IERC721(auction.nftContractAddr).safeTransferFrom(
+                    address(this),  // From marketplace proxy (which holds the NFT)
+                    highestBidder,
+                    auction.tokenIdOrListingId
+                );
+            } else {
+                // No bids - return NFT to seller
+                IERC721(auction.nftContractAddr).safeTransferFrom(
+                    address(this),  // From marketplace proxy (which holds the NFT)
+                    auction.seller,
+                    auction.tokenIdOrListingId
+                );
+            }
+        }
+
         emit AuctionEnded(auctionId, auction.seller, auction.highestBidder, auction.highestBid, auction.tokenIdOrListingId);
     }
 
@@ -381,12 +402,12 @@ contract MarketplaceAuctions is ReentrancyGuardUpgradeable, PausableUpgradeable 
 
     function pause() external {
         // Access control handled by storage contract owner
-        if (msg.sender != STORAGE_CONTRACT.owner()) revert MA__NotSeller();
+        if (msg.sender != STORAGE_CONTRACT.owner()) revert MA__NotOwner();
         _pause();
     }
 
     function unpause() external {
-        if (msg.sender != STORAGE_CONTRACT.owner()) revert MA__NotSeller();
+        if (msg.sender != STORAGE_CONTRACT.owner()) revert MA__NotOwner();
         _unpause();
     }
 

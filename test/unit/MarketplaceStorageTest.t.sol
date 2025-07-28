@@ -565,7 +565,7 @@ contract MarketplaceStorageTest is Test {
         storageContract.setCrossChainRegistry(newCrossChainRegistry);
     }
 
-    function test_GetCurrentChainType() public {
+    function test_GetCurrentChainType() public view {
         // Test for different chain IDs
         // Note: In test environment, block.chainid is typically 31337 (Anvil)
         uint8 chainType = storageContract.getCurrentChainType();
@@ -574,9 +574,9 @@ contract MarketplaceStorageTest is Test {
         assertEq(chainType, 0, "Should default to Polygon for local testing");
     }
 
-    function test_GetSupportedChains() public {
+    function test_GetSupportedChains() public view {
         uint8[] memory supportedChains = storageContract.getSupportedChains();
-        
+
         assertEq(supportedChains.length, 3, "Should have 3 supported chains");
         assertEq(supportedChains[0], 0, "First chain should be Polygon");
         assertEq(supportedChains[1], 1, "Second chain should be Base");
@@ -722,4 +722,4 @@ contract MarketplaceStorageTest is Test {
         vm.expectRevert("MStorage: Not authorized");
         storageContract.setCrossChainListing(LISTING_ID, true);
     }
-} 
+}
