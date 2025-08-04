@@ -58,7 +58,7 @@ contract VertixNFT is
     mapping(uint256 => Collection) public collections;
     mapping(uint256 => uint256) public tokenToCollection;
     mapping(uint256 => bytes32) public metadataHashes;
-
+    mapping(uint256 => uint256) public _nextCollectionTokenId;
     // Events
     event CollectionCreated(
         uint256 indexed collectionId,
@@ -148,8 +148,9 @@ contract VertixNFT is
         bytes32 metadataHash,
         uint96 royaltyBps
     ) external {
+        if (collectionId == 0 || collectionId >= _nextCollectionId) revert VertixNFT__InvalidCollection();
+
         Collection storage collection = collections[collectionId];
-        if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
         if (msg.sender != collection.creator) revert VertixNFT__NotCollectionCreator();
         if (collection.currentSupply >= collection.maxSupply) revert VertixNFT__MaxSupplyReached();
         if (royaltyBps > MAX_ROYALTY_BPS) revert VertixNFT__InvalidRoyaltyPercentage();
@@ -224,7 +225,15 @@ contract VertixNFT is
         address royaltyRecipient,
         uint96 royaltyBps
     ) internal {
-        uint256 tokenId = _nextTokenId++;
+        uint256 tokenId;
+        if (collectionId > 0) {
+            // Collection NFT: use collection-specific counter starting from 1
+            tokenId = _nextCollectionTokenId[collectionId]++;
+            if (tokenId == 0) tokenId = 1; // First mint in collection
+        } else {
+            // Single NFT: use global counter
+            tokenId = _nextTokenId++;
+        }
         _mint(to, tokenId);
         _setTokenURI(tokenId, uri);
         metadataHashes[tokenId] = metadataHash;

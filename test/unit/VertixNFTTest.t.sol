@@ -238,6 +238,12 @@ contract VertixNFTTest is Test {
         nft.mintToCollection(recipient, COLLECTION_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
     }
 
+    function test_RevertIf_MintToInvalidCollection() public {
+        vm.prank(creator);
+        vm.expectRevert(VertixNFT.VertixNFT__InvalidCollection.selector);
+        nft.mintToCollection(recipient, 0, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+    }
+
     function test_RevertIf_NonCreatorMintsToCollection() public {
         vm.prank(creator);
         nft.createCollection(NAME, SYMBOL, IMAGE, MAX_SUPPLY);
