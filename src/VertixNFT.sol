@@ -71,7 +71,7 @@ contract VertixNFT is
     event NFTMinted(
         address indexed to,
         uint256 indexed tokenId,
-        uint256 collectionId,
+        uint256 indexed collectionId,
         string uri,
         bytes32 metadataHash,
         address royaltyRecipient,
@@ -94,7 +94,7 @@ contract VertixNFT is
         __ERC2981_init();
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        _nextTokenId = 1;
+        _nextTokenId = 0;
         _nextCollectionId = 1;
         governanceContract = IVertixGovernance(_governanceContract);
     }
@@ -197,8 +197,8 @@ contract VertixNFT is
         _verifySignature(to, socialMediaId, signature);
 
         // Mint the NFT
-        uint256 tokenId = _nextTokenId++;
-        _mint(to, tokenId);
+        uint256 tokenId = ++_nextTokenId;
+        _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
         metadataHashes[tokenId] = metadataHash;
         usedSocialMediaIds[socialMediaId] = true;
@@ -228,13 +228,12 @@ contract VertixNFT is
         uint256 tokenId;
         if (collectionId > 0) {
             // Collection NFT: use collection-specific counter starting from 1
-            tokenId = _nextCollectionTokenId[collectionId]++;
-            if (tokenId == 0) tokenId = 1; // First mint in collection
+            tokenId = ++_nextCollectionTokenId[collectionId];
         } else {
             // Single NFT: use global counter
-            tokenId = _nextTokenId++;
+            tokenId = ++_nextTokenId;
         }
-        _mint(to, tokenId);
+        _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
         metadataHashes[tokenId] = metadataHash;
         _setTokenRoyalty(tokenId, royaltyRecipient, royaltyBps);

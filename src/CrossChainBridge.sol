@@ -7,6 +7,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {VertixUtils} from "./libraries/VertixUtils.sol";
 import {CrossChainRegistry} from "./CrossChainRegistry.sol";
 import {IVertixGovernance} from "./interfaces/IVertixGovernance.sol";
@@ -21,7 +22,8 @@ contract CrossChainBridge is
     OwnableUpgradeable,
     UUPSUpgradeable,
     ILayerZeroReceiver,
-    ILayerZeroUserApplicationConfig
+    ILayerZeroUserApplicationConfig,
+    IERC721Receiver
 {
     error CCB__InvalidChainType();
     error CCB__OnlyEndpoint();
@@ -132,6 +134,10 @@ contract CrossChainBridge is
 
     function emergencyWithdraw(address token, uint256 tokenId) external onlyOwner {
         IERC721(token).transferFrom(address(this), owner(), tokenId);
+    }
+
+    function onERC721Received(address, address, uint256, bytes memory) public virtual override returns (bytes4) {
+        return this.onERC721Received.selector;
     }
 
     function setTrustedRemote(uint16 _srcChainId, bytes calldata _path) external onlyOwner {

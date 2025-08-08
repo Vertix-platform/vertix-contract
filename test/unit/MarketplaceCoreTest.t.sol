@@ -105,8 +105,8 @@ contract MarketplaceCoreTest is Test {
         vm.deal(buyer, 10 ether);
 
         // Add verification server as a signer
-        // Use the same method as HelperConfig to generate the verification server key
-        verificationServerKey = uint256(keccak256(abi.encodePacked("verificationServer")));
+        // Use the first Anvil account private key for verification server
+        verificationServerKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
         // Fund the verification server address
         vm.deal(verificationServer, 1 ether);
 

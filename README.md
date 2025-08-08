@@ -1,7 +1,7 @@
 # Vertix Smart Contracts
 
 ## Overview
-Vertix is a decentralized marketplace where people can trade digital assets. This includes creator-branded NFTs, in-game items, digital accounts, websites, domains, apps, etc. It uses a combination of Polygon and Base technology to ensure secure, clear, and trustworthy transactions. The smart contracts allow for various NFT functions, such as borrowing, staking, and selling. They also provide secure ways to handle manual transfers and ensure that assets are authentic.
+Vertix is a decentralized digital asset marketplace that enables secure, transparent, and trustless trading of NFTs, gaming assets, social media accounts, websites, and other digital assets through an escrow system across Polygon and Base networks. It aims to become the leading decentralized marketplace for digital assets, providing a secure, accessible, and comprehensive platform that bridges the gap between Web2 and Web3, enabling true ownership and monetization of digital identities across gaming, social media, and the broader digital economy.
 
 ## Features
 - **NFT Trading**: Mint, trade, borrow, stake, and sell creator-branded NFTs and in-game items.

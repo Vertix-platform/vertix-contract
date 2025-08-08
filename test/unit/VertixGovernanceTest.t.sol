@@ -31,7 +31,7 @@ contract VertixGovernanceTest is Test {
     address public newFeeRecipient = makeAddr("newFeeRecipient");
     address public newMarketplace = makeAddr("newMarketplace");
     address public newEscrow = makeAddr("newEscrow");
-    address public verificationServer = makeAddr("verificationServer");
+    address public verificationServer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
     address public newServer = makeAddr("newServer");
 
     uint16 public constant DEFAULT_FEE_BPS = 100; // 1%

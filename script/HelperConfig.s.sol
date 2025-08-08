@@ -141,7 +141,7 @@ contract HelperConfig is Script {
 
         uint256 deployerKey = DEFAULT_ANVIL_DEPLOYER_KEY;
         vm.startBroadcast(deployerKey);
-        address verificationServer = makeAddr("verificationServer");
+        address verificationServer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
         address feeRecipient = makeAddr("feeRecipient");
         address layerZeroEndpoint = makeAddr("layerZeroEndpoint");
         vm.stopBroadcast();
