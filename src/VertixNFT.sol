@@ -257,43 +257,43 @@ contract VertixNFT is
     }
 
     // View functions
-    // /**
-    //  * @dev Get collection tokens
-    //  * @param collectionId Collection ID
-    //  */
-    // function getCollectionTokens(uint256 collectionId) external view returns (uint256[] memory) {
-    //     if (collections[collectionId].creator == address(0)) revert VertixNFT__InvalidCollection();
-    //     return collections[collectionId].tokenIds;
-    // }
+    /**
+     * @dev Get collection tokens
+     * @param collectionId Collection ID
+     */
+    function getCollectionTokens(uint256 collectionId) external view returns (uint256[] memory) {
+        if (collections[collectionId].creator == address(0)) revert VertixNFT__InvalidCollection();
+        return collections[collectionId].tokenIds;
+    }
 
-    // /**
-    //  * @dev Get collection details
-    //  * @param collectionId Collection ID
-    //  */
-    // function getCollectionDetails(uint256 collectionId)
-    //     external
-    //     view
-    //     returns (
-    //         address creator,
-    //         string memory name,
-    //         string memory symbol,
-    //         string memory image,
-    //         uint256 maxSupply,
-    //         uint256 currentSupply
-    //     )
-    // {
-    //     Collection memory collection = collections[collectionId];
-    //     if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
+    /**
+     * @dev Get collection details
+     * @param collectionId Collection ID
+     */
+    function getCollectionDetails(uint256 collectionId)
+        external
+        view
+        returns (
+            address creator,
+            string memory name,
+            string memory symbol,
+            string memory image,
+            uint256 maxSupply,
+            uint256 currentSupply
+        )
+    {
+        Collection memory collection = collections[collectionId];
+        if (collection.creator == address(0)) revert VertixNFT__InvalidCollection();
 
-    //     return (
-    //         collection.creator,
-    //         collection.name,
-    //         collection.symbol,
-    //         collection.image,
-    //         collection.maxSupply,
-    //         collection.currentSupply
-    //     );
-    // }
+        return (
+            collection.creator,
+            collection.name,
+            collection.symbol,
+            collection.image,
+            collection.maxSupply,
+            collection.currentSupply
+        );
+    }
 
     function getUsedSocialMediaIds(string calldata socialMediaId) external view returns (bool) {
         return usedSocialMediaIds[socialMediaId];
