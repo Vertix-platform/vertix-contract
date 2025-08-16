@@ -58,7 +58,6 @@ contract VertixNFT is
     mapping(uint256 => Collection) public collections;
     mapping(uint256 => uint256) public tokenToCollection;
     mapping(uint256 => bytes32) public metadataHashes;
-    mapping(uint256 => uint256) public _nextCollectionTokenId;
     // Events
     event CollectionCreated(
         uint256 indexed collectionId,
@@ -225,18 +224,7 @@ contract VertixNFT is
         address royaltyRecipient,
         uint96 royaltyBps
     ) internal {
-        uint256 tokenId;
-        if (collectionId > 0) {
-            // Collection NFT: use collection-specific counter starting from 1
-            // tokenId = ++_nextCollectionTokenId[collectionId];
-            // Set the highest bit to 1 and include collection ID in the lower bits
-            // Format: 1[collectionId][tokenNumber]
-            // This allows up to 2^127 - 1 collections and 2^127 - 1 tokens per collection
-            tokenId = (1 << 255) | (collectionId << 127) | ++_nextCollectionTokenId[collectionId];
-        } else {
-            // Single NFT: use global counter
-            tokenId = ++_nextTokenId;
-        }
+        uint256 tokenId = ++_nextTokenId;
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
         metadataHashes[tokenId] = metadataHash;

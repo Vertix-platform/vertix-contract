@@ -218,19 +218,24 @@ contract VertixNFTTest is Test {
 
         console.log("collectionId", collectionId);
 
+        // Verify initial supply is 0
+        (,,,,, uint256 initialSupply) = nft.getCollectionDetails(collectionId);
+        assertEq(initialSupply, 0);
+
         vm.prank(creator);
         nft.mintToCollection(recipient, collectionId, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
 
-        // Calculate the expected token ID based on the bit flag approach
-        uint256 expectedTokenId = (1 << 255) | (collectionId << 127) | 1; // First collection NFT
+        // Verify currentSupply was incremented
+        (,,,,, uint256 currentSupply) = nft.getCollectionDetails(collectionId);
+        assertEq(currentSupply, 1);
 
-        // (,,,,, uint256 currentSupply) = nft.getCollectionDetails(COLLECTION_ID);
-        // assertEq(currentSupply, 1);
-        assertEq(nft.tokenToCollection(expectedTokenId), collectionId);
-        assertEq(nft.ownerOf(expectedTokenId), recipient);
-        assertEq(nft.tokenURI(expectedTokenId), TOKEN_URI);
-        assertEq(nft.metadataHashes(expectedTokenId), METADATA_HASH);
-        (address royaltyRecipient, uint256 royaltyAmount) = nft.royaltyInfo(expectedTokenId, 1 ether);
+        // Use the expected token ID (1 for first NFT)
+        uint256 tokenId = 1;
+        assertEq(nft.tokenToCollection(tokenId), collectionId);
+        assertEq(nft.ownerOf(tokenId), recipient);
+        assertEq(nft.tokenURI(tokenId), TOKEN_URI);
+        assertEq(nft.metadataHashes(tokenId), METADATA_HASH);
+        (address royaltyRecipient, uint256 royaltyAmount) = nft.royaltyInfo(tokenId, 1 ether);
         assertEq(royaltyRecipient, creator);
         assertEq(royaltyAmount, (1 ether * ROYALTY_BPS) / 10000);
     }
@@ -289,11 +294,12 @@ contract VertixNFTTest is Test {
         nft.mintSingleNft(recipient, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
 
         // Verify the NFT was minted correctly
-        assertEq(nft.ownerOf(TOKEN_ID), recipient);
-        assertEq(nft.tokenURI(TOKEN_ID), TOKEN_URI);
-        assertEq(nft.metadataHashes(TOKEN_ID), METADATA_HASH);
-        assertEq(nft.tokenToCollection(TOKEN_ID), 0);
-        (address royaltyRecipient, uint256 royaltyAmount) = nft.royaltyInfo(TOKEN_ID, 1 ether);
+        uint256 tokenId = 1;
+        assertEq(nft.ownerOf(tokenId), recipient);
+        assertEq(nft.tokenURI(tokenId), TOKEN_URI);
+        assertEq(nft.metadataHashes(tokenId), METADATA_HASH);
+        assertEq(nft.tokenToCollection(tokenId), 0);
+        (address royaltyRecipient, uint256 royaltyAmount) = nft.royaltyInfo(tokenId, 1 ether);
         assertEq(royaltyRecipient, creator);
         assertEq(royaltyAmount, (1 ether * ROYALTY_BPS) / 10000);
     }
@@ -369,6 +375,176 @@ contract VertixNFTTest is Test {
         vm.prank(user);
         vm.expectRevert(VertixNFT.VertixNFT__InvalidRoyaltyPercentage.selector);
         nft.mintSocialMediaNft(recipient, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, excessiveRoyalty, signature);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    GLOBAL TOKEN ID COUNTER TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GlobalTokenIdCounter_AllNFTTypes() public {
+        // Test that all NFT types use the same global token ID counter
+        
+        // 1. Mint a single NFT - should get token ID 1
+        vm.prank(creator);
+        nft.mintSingleNft(recipient, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(1), recipient);
+        assertEq(nft.tokenToCollection(1), 0); // Single NFT has no collection
+
+        // 2. Create a collection
+        vm.prank(creator);
+        uint256 collectionId = nft.createCollection(NAME, SYMBOL, IMAGE, MAX_SUPPLY);
+
+        // 3. Mint to collection - should get token ID 2
+        vm.prank(creator);
+        nft.mintToCollection(recipient, collectionId, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(2), recipient);
+        assertEq(nft.tokenToCollection(2), collectionId);
+        
+        // Verify currentSupply was incremented
+        (,,,,, uint256 currentSupply) = nft.getCollectionDetails(collectionId);
+        assertEq(currentSupply, 1);
+
+        // 4. Mint another single NFT - should get token ID 3
+        vm.prank(creator);
+        nft.mintSingleNft(user, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(3), user);
+        assertEq(nft.tokenToCollection(3), 0);
+
+        // 5. Mint a social media NFT - should get token ID 4
+        bytes32 messageHash = keccak256(abi.encodePacked(user, SOCIAL_MEDIA_ID_2));
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(verificationServerPk, ethSignedHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.prank(user);
+        nft.mintSocialMediaNft(user, SOCIAL_MEDIA_ID_2, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
+        assertEq(nft.ownerOf(4), user);
+        assertEq(nft.tokenToCollection(4), 0); // Social media NFT has no collection
+
+        // 6. Mint another NFT to the same collection - should get token ID 5
+        vm.prank(creator);
+        nft.mintToCollection(user, collectionId, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(5), user);
+        assertEq(nft.tokenToCollection(5), collectionId);
+        
+        // Verify currentSupply was incremented again
+        (,,,,, uint256 finalSupply) = nft.getCollectionDetails(collectionId);
+        assertEq(finalSupply, 2);
+
+        // Verify all NFTs exist and have correct properties
+        assertEq(nft.ownerOf(1), recipient);
+        assertEq(nft.ownerOf(2), recipient);
+        assertEq(nft.ownerOf(3), user);
+        assertEq(nft.ownerOf(4), user);
+        assertEq(nft.ownerOf(5), user);
+
+        // Verify collection mapping
+        assertEq(nft.tokenToCollection(1), 0); // Single NFT
+        assertEq(nft.tokenToCollection(2), collectionId); // Collection NFT
+        assertEq(nft.tokenToCollection(3), 0); // Single NFT
+        assertEq(nft.tokenToCollection(4), 0); // Social media NFT
+        assertEq(nft.tokenToCollection(5), collectionId); // Collection NFT
+
+        // Verify social media ID tracking
+        assertTrue(nft.usedSocialMediaIds(SOCIAL_MEDIA_ID_2));
+        assertFalse(nft.usedSocialMediaIds("unused_id"));
+
+        // Verify metadata hashes
+        assertEq(nft.metadataHashes(1), METADATA_HASH);
+        assertEq(nft.metadataHashes(2), METADATA_HASH);
+        assertEq(nft.metadataHashes(3), METADATA_HASH);
+        assertEq(nft.metadataHashes(4), METADATA_HASH);
+        assertEq(nft.metadataHashes(5), METADATA_HASH);
+
+        // Verify token URIs
+        assertEq(nft.tokenURI(1), TOKEN_URI);
+        assertEq(nft.tokenURI(2), TOKEN_URI);
+        assertEq(nft.tokenURI(3), TOKEN_URI);
+        assertEq(nft.tokenURI(4), TOKEN_URI);
+        assertEq(nft.tokenURI(5), TOKEN_URI);
+    }
+
+    function test_GlobalTokenIdCounter_SequentialMinting() public {
+        // Test sequential minting to ensure token IDs are consecutive
+        
+        address[] memory recipients = new address[](5);
+        recipients[0] = makeAddr("recipient1");
+        recipients[1] = makeAddr("recipient2");
+        recipients[2] = makeAddr("recipient3");
+        recipients[3] = makeAddr("recipient4");
+        recipients[4] = makeAddr("recipient5");
+
+        // Fund recipients
+        for (uint256 i = 0; i < 5; i++) {
+            vm.deal(recipients[i], 1 ether);
+        }
+
+        // Mint 5 single NFTs sequentially
+        for (uint256 i = 0; i < 5; i++) {
+            vm.prank(creator);
+            nft.mintSingleNft(recipients[i], TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+            
+            // Verify token ID is sequential (starting from 1)
+            assertEq(nft.ownerOf(i + 1), recipients[i]);
+            assertEq(nft.tokenToCollection(i + 1), 0);
+        }
+
+        // Verify all token IDs are consecutive
+        for (uint256 i = 1; i <= 5; i++) {
+            assertEq(nft.ownerOf(i), recipients[i - 1]);
+        }
+    }
+
+    function test_GlobalTokenIdCounter_MixedMinting() public {
+        // Test mixed minting order to ensure global counter works correctly
+        
+        // 1. Mint single NFT (token ID 1)
+        vm.prank(creator);
+        nft.mintSingleNft(recipient, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(1), recipient);
+
+        // 2. Create collection
+        vm.prank(creator);
+        uint256 collectionId = nft.createCollection(NAME, SYMBOL, IMAGE, MAX_SUPPLY);
+
+        // 3. Mint to collection (token ID 2)
+        vm.prank(creator);
+        nft.mintToCollection(recipient, collectionId, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(2), recipient);
+
+        // 4. Mint social media NFT (token ID 3)
+        bytes32 messageHash = keccak256(abi.encodePacked(user, SOCIAL_MEDIA_ID));
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(verificationServerPk, ethSignedHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.prank(user);
+        nft.mintSocialMediaNft(user, SOCIAL_MEDIA_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS, signature);
+        assertEq(nft.ownerOf(3), user);
+
+        // 5. Mint another single NFT (token ID 4)
+        vm.prank(creator);
+        nft.mintSingleNft(user, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(4), user);
+
+        // 6. Mint another collection NFT (token ID 5)
+        vm.prank(creator);
+        nft.mintToCollection(recipient, collectionId, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        assertEq(nft.ownerOf(5), recipient);
+
+        // Verify all token IDs are unique and sequential
+        assertEq(nft.ownerOf(1), recipient);
+        assertEq(nft.ownerOf(2), recipient);
+        assertEq(nft.ownerOf(3), user);
+        assertEq(nft.ownerOf(4), user);
+        assertEq(nft.ownerOf(5), recipient);
+
+        // Verify collection mapping
+        assertEq(nft.tokenToCollection(1), 0); // Single NFT
+        assertEq(nft.tokenToCollection(2), collectionId); // Collection NFT
+        assertEq(nft.tokenToCollection(3), 0); // Social media NFT
+        assertEq(nft.tokenToCollection(4), 0); // Single NFT
+        assertEq(nft.tokenToCollection(5), collectionId); // Collection NFT
     }
 
 

@@ -370,54 +370,11 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
 
         // Cross-chain purchase with bridging
         if (!isCrossChainListed) revert MC__InvalidListing();
-        
+
         // Lock the asset and initiate bridge
         _initiateCrossChainPurchase(listingId, seller, nftContractAddr, tokenId, price, targetChain);
     }
 
-    /**
-     * @dev Internal function to initiate cross-chain purchase
-     */
-    function _initiateCrossChainPurchase(
-        uint256 listingId,
-        address seller,
-        address nftContractAddr,
-        uint256 tokenId,
-        uint96 price,
-        uint8 targetChain
-    ) internal {
-        // Mark listing as inactive during bridge
-        STORAGE_CONTRACT.updateNftListingFlags(listingId, 0);
-        
-        // Process payment to seller
-        MarketplaceFees.PaymentConfig memory config = MarketplaceFees.PaymentConfig({
-            totalPayment: msg.value,
-            salePrice: price,
-            nftContract: nftContractAddr,
-            tokenId: tokenId,
-            seller: seller,
-            hasRoyalties: true
-        });
-        uint256 refundAmount = FEES_CONTRACT.processNftSalePayment{value: msg.value}(config);
-        
-        if (refundAmount > 0) {
-            FEES_CONTRACT.refundExcessPayment(msg.sender, refundAmount);
-        }
-
-        // Initiate bridge request
-        // This would integrate with your CrossChainBridge contract
-        _bridgeAsset(msg.sender, nftContractAddr, tokenId, targetChain);
-        
-        emit NFTBought(
-            listingId,
-            msg.sender,
-            price,
-            0, // royaltyAmount
-            address(0), // royaltyRecipient
-            0, // platformFee
-            address(0) // feeRecipient
-        );
-    }
 
     /**
      * @dev Buy non-NFT asset with escrow
@@ -608,6 +565,50 @@ contract MarketplaceCore is ReentrancyGuardUpgradeable, PausableUpgradeable {
     function _validateCancellation(address seller, bool active) internal view {
         if (!active) revert MC__InvalidListing();
         if (msg.sender != seller) revert MC__NotSeller();
+    }
+
+    /**
+     * @dev Internal function to initiate cross-chain purchase
+     */
+    function _initiateCrossChainPurchase(
+        uint256 listingId,
+        address seller,
+        address nftContractAddr,
+        uint256 tokenId,
+        uint96 price,
+        uint8 targetChain
+    ) internal {
+        // Mark listing as inactive during bridge
+        STORAGE_CONTRACT.updateNftListingFlags(listingId, 0);
+
+        // Process payment to seller
+        MarketplaceFees.PaymentConfig memory config = MarketplaceFees.PaymentConfig({
+            totalPayment: msg.value,
+            salePrice: price,
+            nftContract: nftContractAddr,
+            tokenId: tokenId,
+            seller: seller,
+            hasRoyalties: true
+        });
+        uint256 refundAmount = FEES_CONTRACT.processNftSalePayment{value: msg.value}(config);
+
+        if (refundAmount > 0) {
+            FEES_CONTRACT.refundExcessPayment(msg.sender, refundAmount);
+        }
+
+        // Initiate bridge request
+        // This would integrate with your CrossChainBridge contract
+        _bridgeAsset(msg.sender, nftContractAddr, tokenId, targetChain);
+
+        emit NFTBought(
+            listingId,
+            msg.sender,
+            price,
+            0, // royaltyAmount
+            address(0), // royaltyRecipient
+            0, // platformFee
+            address(0) // feeRecipient
+        );
     }
 
     /**
