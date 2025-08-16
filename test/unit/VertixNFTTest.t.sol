@@ -221,13 +221,16 @@ contract VertixNFTTest is Test {
         vm.prank(creator);
         nft.mintToCollection(recipient, collectionId, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
 
+        // Calculate the expected token ID based on the bit flag approach
+        uint256 expectedTokenId = (1 << 255) | (collectionId << 127) | 1; // First collection NFT
+
         // (,,,,, uint256 currentSupply) = nft.getCollectionDetails(COLLECTION_ID);
         // assertEq(currentSupply, 1);
-        assertEq(nft.tokenToCollection(TOKEN_ID), collectionId);
-        assertEq(nft.ownerOf(TOKEN_ID), recipient);
-        assertEq(nft.tokenURI(TOKEN_ID), TOKEN_URI);
-        assertEq(nft.metadataHashes(TOKEN_ID), METADATA_HASH);
-        (address royaltyRecipient, uint256 royaltyAmount) = nft.royaltyInfo(TOKEN_ID, 1 ether);
+        assertEq(nft.tokenToCollection(expectedTokenId), collectionId);
+        assertEq(nft.ownerOf(expectedTokenId), recipient);
+        assertEq(nft.tokenURI(expectedTokenId), TOKEN_URI);
+        assertEq(nft.metadataHashes(expectedTokenId), METADATA_HASH);
+        (address royaltyRecipient, uint256 royaltyAmount) = nft.royaltyInfo(expectedTokenId, 1 ether);
         assertEq(royaltyRecipient, creator);
         assertEq(royaltyAmount, (1 ether * ROYALTY_BPS) / 10000);
     }
