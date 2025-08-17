@@ -552,48 +552,48 @@ contract VertixNFTTest is Test {
                     VIEW FUNCTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    // function test_GetCollectionTokens() public {
-    //     vm.prank(creator);
-    //     nft.createCollection(NAME, SYMBOL, IMAGE, MAX_SUPPLY);
+    function test_GetCollectionTokens() public {
+        vm.prank(creator);
+        nft.createCollection(NAME, SYMBOL, IMAGE, MAX_SUPPLY);
 
-    //     vm.prank(creator);
-    //     nft.mintToCollection(recipient, COLLECTION_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
+        vm.prank(creator);
+        nft.mintToCollection(recipient, COLLECTION_ID, TOKEN_URI, METADATA_HASH, ROYALTY_BPS);
 
-    //     uint256[] memory tokenIds = nft.getCollectionTokens(COLLECTION_ID);
-    //     assertEq(tokenIds.length, 1);
-    //     assertEq(tokenIds[0], TOKEN_ID);
-    // }
+        uint256[] memory tokenIds = nft.getCollectionTokens(COLLECTION_ID);
+        assertEq(tokenIds.length, 1);
+        assertEq(tokenIds[0], TOKEN_ID);
+    }
 
-    // function test_RevertIf_GetTokensForInvalidCollection() public {
-    //     vm.expectRevert(VertixNFT.VertixNFT__InvalidCollection.selector);
-    //     nft.getCollectionTokens(COLLECTION_ID);
-    // }
+    function test_RevertIf_GetTokensForInvalidCollection() public {
+        vm.expectRevert(VertixNFT.VertixNFT__InvalidCollection.selector);
+        nft.getCollectionTokens(COLLECTION_ID);
+    }
 
-    // function test_GetCollectionDetails() public {
-    //     vm.prank(creator);
-    //     nft.createCollection(NAME, SYMBOL, IMAGE, MAX_SUPPLY);
+    function test_GetCollectionDetails() public {
+        vm.prank(creator);
+        nft.createCollection(NAME, SYMBOL, IMAGE, MAX_SUPPLY);
 
-    //     (
-    //         address collectionCreator,
-    //         string memory name,
-    //         string memory symbol,
-    //         string memory image,
-    //         uint256 maxSupply,
-    //         uint256 currentSupply
-    //     ) = nft.getCollectionDetails(COLLECTION_ID);
+        (
+            address collectionCreator,
+            string memory name,
+            string memory symbol,
+            string memory image,
+            uint256 maxSupply,
+            uint256 currentSupply
+        ) = nft.getCollectionDetails(COLLECTION_ID);
 
-    //     assertEq(collectionCreator, creator);
-    //     assertEq(name, NAME);
-    //     assertEq(symbol, SYMBOL);
-    //     assertEq(image, IMAGE);
-    //     assertEq(maxSupply, MAX_SUPPLY);
-    //     assertEq(currentSupply, 0);
-    // }
+        assertEq(collectionCreator, creator);
+        assertEq(name, NAME);
+        assertEq(symbol, SYMBOL);
+        assertEq(image, IMAGE);
+        assertEq(maxSupply, MAX_SUPPLY);
+        assertEq(currentSupply, 0);
+    }
 
-    // function test_RevertIf_GetDetailsForInvalidCollection() public {
-    //     vm.expectRevert(VertixNFT.VertixNFT__InvalidCollection.selector);
-    //     nft.getCollectionDetails(COLLECTION_ID);
-    // }
+    function test_RevertIf_GetDetailsForInvalidCollection() public {
+        vm.expectRevert(VertixNFT.VertixNFT__InvalidCollection.selector);
+        nft.getCollectionDetails(COLLECTION_ID);
+    }
 
     /*//////////////////////////////////////////////////////////////
                     UPGRADE TESTS
