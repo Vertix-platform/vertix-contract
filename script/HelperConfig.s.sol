@@ -27,9 +27,7 @@ contract HelperConfig is Script {
         } else if (block.chainid == 137) {
             // Polygon Mainnet
             activeNetworkConfig = getPolygonMainnetConfig();
-        } else if (block.chainid == 80001) {
-            // Polygon Mumbai Testnet
-            activeNetworkConfig = getPolygonMumbaiConfig();
+
         } else if (block.chainid == 8453) {
             // Base Mainnet
             activeNetworkConfig = getBaseMainnetConfig();
@@ -39,6 +37,12 @@ contract HelperConfig is Script {
         } else if (block.chainid == 11155111) {
             // Sepolia Testnet
             activeNetworkConfig = getSepoliaConfig();
+        } else if (block.chainid == 1101) {
+            // Polygon zkEVM Mainnet
+            activeNetworkConfig = getPolygonZkEVMMainnetConfig();
+        } else if (block.chainid == 2442) {
+            // Polygon zkEVM Testnet
+            activeNetworkConfig = getPolygonZkEVMTestnetConfig();
         } else {
             // Default to Anvil
             activeNetworkConfig = getOrCreateAnvilEthConfig();
@@ -74,19 +78,7 @@ contract HelperConfig is Script {
         });
     }
 
-    function getPolygonMumbaiConfig() public view returns (NetworkConfig memory) {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        if (deployerKey == 0) {
-            revert HelperConfig__PrivateKeyNotSet();
-        }
-        return NetworkConfig({
-            verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
-            feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
-            layerZeroEndpoint: 0xf69186dfBa60DdB133E91E9A4B5673624293d8F8,
-            chainType: 1, // Polygon (VertixUtils.ChainType.Polygon)
-            deployerKey: deployerKey
-        });
-    }
+
 
     function getBaseMainnetConfig() public view returns (NetworkConfig memory) {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
@@ -129,6 +121,36 @@ contract HelperConfig is Script {
             feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
             layerZeroEndpoint: 0x4d73AdB72bC3Dd36896663d8A3de7412eAa4b4eD,
             chainType: 2, // Ethereum
+            deployerKey: deployerKey
+        });
+    }
+
+    function getPolygonZkEVMMainnetConfig() public view returns (NetworkConfig memory) {
+        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        if (deployerKey == 0) {
+            revert HelperConfig__PrivateKeyNotSet();
+        }
+
+        return NetworkConfig({
+            verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0x3c2269811836af69497E5F486A85D7316753cf62,
+            chainType: 3, // Polygon zkEVM (VertixUtils.ChainType.PolygonZkEVM)
+            deployerKey: deployerKey
+        });
+    }
+
+    function getPolygonZkEVMTestnetConfig() public view returns (NetworkConfig memory) {
+        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        if (deployerKey == 0) {
+            revert HelperConfig__PrivateKeyNotSet();
+        }
+
+        return NetworkConfig({
+            verificationServer: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            feeRecipient: 0xe9f1406E039d5c3FBF442C2542Df84E52A51d3C4,
+            layerZeroEndpoint: 0xf69186dfBa60DdB133E91E9A4B5673624293d8F8,
+            chainType: 3, // Polygon zkEVM (VertixUtils.ChainType.PolygonZkEVM)
             deployerKey: deployerKey
         });
     }

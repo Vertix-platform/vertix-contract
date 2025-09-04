@@ -8,7 +8,7 @@ help:
 	@echo "    example: make deploy ARGS=\"--network sepolia\""
 	@echo ""
 	@echo "Available networks:"
-	@echo "  polygon, polygon-testnet, base, base-testnet, sepolia, eth, anvil"
+	@echo "  polygon, polygon-testnet, polygon-zkevm, polygon-zkevm-testnet, base, base-testnet, sepolia, eth, anvil"
 
 all: clean remove install update build
 
@@ -40,13 +40,17 @@ NETWORK_ARGS := --rpc-url $(ANVIL_RPC_URL) --private-key $(ANVIL_PRIVATE_KEY) --
 ifeq ($(findstring --network polygon,$(ARGS)),--network polygon)
 	NETWORK_ARGS := --rpc-url $(POLYGON_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --verifier-url $(POLYGONSCAN_API_URL) --verifier polygonscan
 endif
-ifeq ($(findstring --network polygon-testnet,$(ARGS)),--network polygon-testnet)
-	NETWORK_ARGS := --rpc-url $(POLYGON_MUMBAI_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast -- --vvvv
+
+ifeq ($(findstring --network polygon-zkevm,$(ARGS)),--network polygon-zkevm)
+	NETWORK_ARGS := --rpc-url $(POLYGON_ZKEVM_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --verifier-url $(POLYGON_ZKEVM_EXPLORER_API_URL) --verifier polygonscan
+endif
+ifeq ($(findstring --network polygon-zkevm-testnet,$(ARGS)),--network polygon-zkevm-testnet)
+	NETWORK_ARGS := --rpc-url $(POLYGON_ZKEVM_TESTNET_RPC_URL) --private-key $(PRIVATE_KEY) --gas-price 20000000000 --gas-limit 150000000 --legacy --broadcast -- --vvvv
 endif
 ifeq ($(findstring --network base,$(ARGS)),--network base)
 	NETWORK_ARGS := --rpc-url $(BASE_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --verifier-url $(BASESCAN_API_URL) --verifier basescan
 endif
-ifeq ($(findstring --network base-testnet,$(ARGS)),--network base-testnet)
+ifeq ($(findstring --network base-sepolia,$(ARGS)),--network base-sepolia)
 	NETWORK_ARGS := --rpc-url $(BASE_SEPOLIA_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast -- --vvvv
 endif
 ifeq ($(findstring --network sepolia,$(ARGS)),--network sepolia)
@@ -64,9 +68,10 @@ deploy:
 
 ## Sample command
 ## make deploy ARGS="--network polygon"
-## make deploy ARGS="--network polygon-testnet"
+## make deploy ARGS="--network polygon-zkevm"
+## make deploy ARGS="--network polygon-zkevm-testnet"
 ## make deploy ARGS="--network base"
-## make deploy ARGS="--network base-testnet"
+## make deploy ARGS="--network base-sepolia"
 ## make deploy ARGS="--network sepolia"
 ## make deploy ARGS="--network eth"
 ## make deploy ARGS="--network anvil"

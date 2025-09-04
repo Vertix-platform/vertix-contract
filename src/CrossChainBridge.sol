@@ -108,18 +108,30 @@ contract CrossChainBridge is
         currentChainType = _chainType;
         minimumBridgeFee = _minFee;
 
+        // Initialize chain type to LayerZero ID mappings
         if (_chainType == uint8(VertixUtils.ChainType.Polygon)) {
-            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Polygon)] = 109;
-            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Base)] = 184;
-        } else {
-            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Base)] = 184;
-            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Polygon)] = 109;
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Polygon)] = 109;      // Polygon
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Base)] = 184;         // Base
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.PolygonZkEVM)] = 158; // Polygon zkEVM
+        } else if (_chainType == uint8(VertixUtils.ChainType.Base)) {
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Polygon)] = 109;      // Polygon
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Base)] = 184;         // Base
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.PolygonZkEVM)] = 158; // Polygon zkEVM
+        } else if (_chainType == uint8(VertixUtils.ChainType.PolygonZkEVM)) {
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Polygon)] = 109;      // Polygon
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.Base)] = 184;         // Base
+            chainTypeToLayerZeroId[uint8(VertixUtils.ChainType.PolygonZkEVM)] = 158; // Polygon zkEVM
         }
 
-        layerZeroIdToChainType[109] = uint8(VertixUtils.ChainType.Polygon);
-        layerZeroIdToChainType[184] = uint8(VertixUtils.ChainType.Base);
+        // Initialize LayerZero ID to chain type mappings
+        layerZeroIdToChainType[109] = uint8(VertixUtils.ChainType.Polygon);      // Polygon
+        layerZeroIdToChainType[184] = uint8(VertixUtils.ChainType.Base);         // Base
+        layerZeroIdToChainType[158] = uint8(VertixUtils.ChainType.PolygonZkEVM); // Polygon zkEVM
+
+        // Mark all supported chains
         supportedChains[uint8(VertixUtils.ChainType.Polygon)] = true;
         supportedChains[uint8(VertixUtils.ChainType.Base)] = true;
+        supportedChains[uint8(VertixUtils.ChainType.PolygonZkEVM)] = true;
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}

@@ -437,16 +437,16 @@ contract MarketplaceStorage {
     ) external onlyAuthorized {
         // Get CrossChainRegistry instance
         CrossChainRegistry registry = CrossChainRegistry(crossChainRegistry);
-        
+
         // Register for each supported chain (excluding current chain)
         uint8[] memory supportedChains = getSupportedChains();
-        
+
         for (uint256 i = 0; i < supportedChains.length; i++) {
             uint8 targetChainType = supportedChains[i];
-            
+
             // Skip if same as origin chain
             if (targetChainType == originChainType) continue;
-            
+
             // Register cross-chain asset
             registry.registerCrossChainAsset(
                 nftContractAddr,
@@ -476,7 +476,7 @@ contract MarketplaceStorage {
      * @return uint8 Chain type (0=Polygon, 1=Base, 2=Ethereum)
      */
     function getCurrentChainType() public view returns (uint8) {
-        if (block.chainid == 137 || block.chainid == 80001) {
+        if (block.chainid == 137) {
             return 0; // Polygon (VertixUtils.ChainType.Polygon)
         } else if (block.chainid == 8453 || block.chainid == 84532) {
             return 1; // Base (VertixUtils.ChainType.Base)

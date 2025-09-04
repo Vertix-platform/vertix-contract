@@ -23,7 +23,8 @@ library VertixUtils {
     enum ChainType {
         Polygon,     // 0 - Primary chain
         Base,        // 1 - Secondary chain
-        Ethereum     // 2 - Future support
+        Ethereum,    // 2 - Future support
+        PolygonZkEVM // 3 - Polygon zkEVM chain
     }
 
     // Cross-chain message types

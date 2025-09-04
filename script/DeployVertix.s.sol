@@ -210,11 +210,12 @@ contract DeployVertix is Script {
      */
     function _getChainName() internal view returns (string memory) {
         if (block.chainid == 137) return "Polygon Mainnet";
-        if (block.chainid == 80001) return "Polygon Mumbai";
         if (block.chainid == 8453) return "Base Mainnet";
         if (block.chainid == 84532) return "Base Sepolia";
         if (block.chainid == 1) return "Ethereum Mainnet";
         if (block.chainid == 11155111) return "Sepolia";
+        if (block.chainid == 1101) return "Polygon ZK EVM Mainnet";
+        if (block.chainid == 2442) return "Polygon ZK EVM Testnet";
         return "Local Network";
     }
 

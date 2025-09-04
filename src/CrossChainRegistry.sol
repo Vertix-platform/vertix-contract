@@ -157,14 +157,16 @@ contract CrossChainRegistry {
         marketplaceStorage = _marketplaceStorage;
         authorizedContracts[_owner] = true;
         lastGlobalSync = uint64(block.timestamp);
-        
+
         // Initialize current chain type based on block.chainid
-        if (block.chainid == 137 || block.chainid == 80001) {
+        if (block.chainid == 137) {
             currentChainType = 0; // Polygon
         } else if (block.chainid == 8453 || block.chainid == 84532) {
             currentChainType = 1; // Base
         } else if (block.chainid == 1 || block.chainid == 11155111) {
             currentChainType = 2; // Ethereum
+        } else if (block.chainid == 1101 || block.chainid == 2442) {
+            currentChainType = 3; // Polygon zkEVM
         } else {
             currentChainType = 0; // Default to Polygon for local testing
         }
